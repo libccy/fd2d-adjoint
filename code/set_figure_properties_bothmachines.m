@@ -4,7 +4,7 @@
 
 % path(path,'./externaltools');
 %% preparation
-HostName = gethostname;
+HostName = 'gethostname';
 known_machines = {'D-13-L-2', 'doffer.geo.uu.nl', 'UBUNTU', 'DOFFER.GEO.UU.NL'};
 
 if strcmp(HostName,'D-13-L-2')
@@ -38,7 +38,7 @@ end
 % colour scale
 load cm_velocity;       % load the color map we want to use
 
-set(0,'Units','pixels') 
+set(0,'Units','pixels')
 
 
 
@@ -103,7 +103,7 @@ pos_adj_3 = [edge,...
         6/6*scn_width,...
         3/4*scn_height];
     pos_seis = [66 1 825  1176];
-    pos_knl = [ 66 1 648 1176]; 
+    pos_knl = [ 66 1 648 1176];
     pos_rtk = [1152         520        1519         968];
     pos_gravknl_buildup =  [1123         589        1039         916];
     pos_misfit =  [679 128 808 1049];
@@ -126,7 +126,7 @@ elseif strcmp(HostName,'doffer.geo.uu.nl') || strcmp(HostName,'DOFFER.GEO.UU.NL'
     % pos_mod = [1082        1134         983         376];
     if strcmp(version('-release'),'2014b')
     pos_mod = [3         701        1063         302];
-    else 
+    else
         pos_mod = [1082        1134         983         376];
     end
 end
@@ -160,7 +160,7 @@ elseif strcmp(HostName,'doffer.geo.uu.nl') || strcmp(HostName,'DOFFER.GEO.UU.NL'
 %         2/3 * verti_scn_width - edge,...
 %         pos_mod(4)];
 pos_vel = [4    38   752   610];
-    
+
 pos_vel_nplots3 = [edge,...
         verti_scn_height * 2/5,...
         verti_scn_width - edge,...
@@ -215,7 +215,7 @@ end
 
 % position for the kernel plots
 if strcmp(HostName,'D-13-L-2')
-    pos_knl = [ 66 1 648 1176]; 
+    pos_knl = [ 66 1 648 1176];
 %     pos_knl = [edge,...                 % left
 %             0,...                       % bottom
 %             scn_width*2/3 - edge,...    % width
