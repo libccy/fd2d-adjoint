@@ -1,7 +1,7 @@
 
 
 function [v_rec,t,u_fw,v_fw,rec_x,rec_z]=run_forward(varargin)
-    
+
     %==========================================================================
     % run forward simulation
     %
@@ -26,7 +26,7 @@ if exist('prevmsg') reverseStr = repmat(sprintf('\b'), 1, length(prevmsg));
 else reverseStr = '';
 end
 prevmsg = sprintf('initialising...');
-fprintf([reverseStr, prevmsg]); 
+fprintf([reverseStr, prevmsg]);
 % disp 'initialising...'
 %==========================================================================
 %% set paths and read input
@@ -81,14 +81,14 @@ model.lambda = lambda;
 if (strcmp(simulation_mode,'forward') || strcmp(simulation_mode,'forward_green'))
 
     %- time axis ----------------------------------------------------------
-    
+
     t=0:dt:dt*(nt-1);
-    
+
     %- compute indices for source & receiver locations --------------------
 
     [src_x_id,src_z_id,ns] = compute_indices(src_x,src_z,Lx,Lz,dx,dz);
     [rec_x_id,rec_z_id,n_receivers] = compute_indices(rec_x,rec_z,Lx,Lz,dx,dz);
-    
+
 end
 
 %% check values
@@ -102,7 +102,7 @@ end
 run_wavefield_propagation;
 
 %==========================================================================
-%% output 
+%% output
 %==========================================================================
 
 %- store time-reversed forward field --------------------------------------
@@ -133,7 +133,7 @@ if strcmp(make_movie,'yes')
     disp(['storing movie: ',movie_file]);
     % profile can now be 'Motion JPEG AVI' (before 'Uncompressed AVI')
     % much more efficient in output file size
-    writerObj=VideoWriter(movie_file,'Motion JPEG AVI');  
+    writerObj=VideoWriter(movie_file,'Motion JPEG AVI');
     writerObj.FrameRate = 10;
     open(writerObj);
     writeVideo(writerObj,M);
@@ -176,11 +176,13 @@ elseif narg == 1;
 else
     useGivenModel = 'no';
     GivenModel = 0;
-    stf = zeros(1,nt); stf(1) = 1; 
+%     stf = zeros(1,nt); stf(1) = 1; 
+    stf = prepare_stf;
+    stf = {stf.stf};
     warning('using dummy delta function stf!!!');
 %     disp(['number of input arguments to run_forward: ', num2str(narg)]);
     return
-    
+
 end
 
 % for i = 1:length(updatables)
