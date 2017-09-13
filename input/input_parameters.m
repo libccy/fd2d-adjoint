@@ -289,7 +289,7 @@ absorb_bottom=1;% absorb waves on the bottom boundary
 
 % plot every 'plot every'th image (otherwise computationally rather heavy)
 % plot_every=nt*2; % value larger than nt, so that no plotting takes place
-plot_every = 25;
+plot_every = 0;
 
 plot_forward_frames='PSV';   % 'X-Y-Z' or 'X-Y' or 'PSV-SH' or 'PSV' 
                              % which frames should be plotted in the forward calculation
@@ -317,8 +317,8 @@ save_v_fw = 'no';       % 'yes' or 'no' -- save the v_forward matfile
 
 
 %- movies -----
-make_movie='yes';                                   % 'yes' or 'no'
-make_movie_adj='yes';                               % 'yes' or 'no'
+make_movie='no';                                   % 'yes' or 'no'
+make_movie_adj='no';                               % 'yes' or 'no'
 movie_file=['./output/',project_name,'/Velocity.forward'];        % output file name
 movie_file_adj=['./output/',project_name,'/Velocity.adjoint'];
 movie_label = 'S-wave past a block \rho_2 anomaly (v_s & v_p constant)';

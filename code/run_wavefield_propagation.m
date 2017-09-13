@@ -27,7 +27,7 @@ prevmsg = sprintf('iterating...');
 fprintf([reverseStr, prevmsg]);
 % disp 'iterating...'
 
-position_figures;
+% position_figures;
 
 % stf
 % stf{1}
@@ -262,7 +262,7 @@ for n=1:nt
         if (mod(n,plot_every)==0)
             plot_adjoint_field;
         end
-        
+
     end
 
 end
