@@ -27,7 +27,9 @@ prevmsg = sprintf('iterating...');
 fprintf([reverseStr, prevmsg]);
 % disp 'iterating...'
 
-% position_figures;
+if plot_every > 0
+    position_figures;
+end
 
 % stf
 % stf{1}
