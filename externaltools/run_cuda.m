@@ -1,26 +1,27 @@
-function [] = run_cuda(fname, varargin)
+function output = run_cuda(fname, inames, onames)
     if ~exist('externaltools\\run_cuda.exe','file')
-        run_cuda_file(0,1,2);
+        compile_cuda;
     end
     input_parameters;
-    n = length(varargin);
-    nout = 0;
-    oname = cell(1,n);
-    for i = 1:n
-        varname = varargin(i);
-        varname = varname{1};
-        if exist(varname, 'var')
-            nout = nout + 1;
-            oname{nout} = varname;
-            var = eval(varname);
-            fid = fopen(strcat('externaltools\\',varname),'w');
-            for j=1:length(var)
-                fprintf(fid,'%f\n',var(j));
+    for i = 1:length(inames)
+        if exist(inames{i}, 'var')
+            argv = eval(inames{i});
+            fid = fopen(strcat('externaltools\\',inames{i}),'w');
+            for j=1:length(argv)
+                fprintf(fid,'%f\n',argv(j));
             end
             fclose(fid);
+        else
+            inames{i} = [];
         end
     end
-    oname = oname(1:nout);
-    disp(oname);
+    inames(cellfun(@isempty,inames))=[];
     system(sprintf('externaltools\\run_cuda.exe %s',fname));
+    for i = 1:length(inames)
+        delete(sprintf('externaltools\\%s',inames{i}));
+    end
+    output = struct();
+    for i = 1:length(onames)
+        output.(onames{i}) = i;
+    end
 end

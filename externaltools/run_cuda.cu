@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "run_wavefield_propagation.h"
+
+void run_wavefield_propagation(void){
+    printf("prsdfsdfo\n");
+}
 
 int main(int argc , char *argv[]){
     for(int i = 0; i< argc; i++){
