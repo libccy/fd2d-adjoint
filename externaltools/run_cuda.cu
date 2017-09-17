@@ -1,31 +1,44 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string>
-#include <map>
 
 using namespace std;
 
-map<string, float> import_data(void){
-    map<string, float> config;
+struct config{
+    float nx;
+    float nz;
+    float nt;
+    int set(char *key, float value){
+        switch(key[0]){
+            case 'n':{
+                switch(key[1]){
+                    case 'x': nx = value; return 1;
+                    case 'z': nz = value; return 1;
+                    case 't': nt = value; return 1;
+                    default: return 0;
+                }
+            }
+            default: return 0;
+        }
+    }
+};
+
+struct config import_data(void){
+    struct config cfg;
     FILE *cfgfile = fopen("externaltools/config","r");
-    char buf[50];
-    while(fgets(buf, 50, cfgfile)){
-        int len = strlen(buf);
-        char *cfgkey = (char *) malloc(len);
-        strncpy(cfgkey, buf, len-1);
-        cfgkey[len-1] = '\0';
+    char cfgkey[50];
+    while(fgets(cfgkey, 50, cfgfile)){
         float cfgvalue;
         fscanf(cfgfile, "%f\n", &cfgvalue);
-        config[cfgkey] = cfgvalue;
+        cfg.set(cfgkey, cfgvalue);
     }
-    return config;
+    return cfg;
 }
 void run_wavefield_propagation(void){
 
 }
 void run_forward(void){
-    map<string, float> config = import_data();
-    printf("%f %f\n",config["nx"],config["nz"]);
+    struct config cfg = import_data();
+    printf("nx: %f\nnt: %f\n", cfg.nx, cfg.nt);
 }
 
 int main(int argc , char *argv[]){
