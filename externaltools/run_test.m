@@ -1,6 +1,6 @@
 tic;
 % [v_rec,t,u_fw,v_fw,rec_x,rec_z]=run_forward;
-[config,test] = run_cuda('run_forward',{'config','test'},2);
+[config] = run_cuda('run_forward',{'config'});
 toc;
 
 % stf = prepare_stf;

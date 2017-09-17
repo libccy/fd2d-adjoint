@@ -4,7 +4,7 @@ function varargout = run_cuda(fname, onames, expdata)
     end
     
     if nargin < 3 
-        expdata = 1;
+        expdata = 2;
     end
     if expdata
         export_data;
