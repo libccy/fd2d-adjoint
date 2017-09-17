@@ -1,27 +1,32 @@
-function output = run_cuda(fname, inames, onames)
-    if ~exist('externaltools\\run_cuda.exe','file')
+function varargout = run_cuda(fname, onames, expdata)
+    if ~exist('externaltools\run_cuda.exe','file')
         compile_cuda;
     end
-    input_parameters;
-    for i = 1:length(inames)
-        if exist(inames{i}, 'var')
-            argv = eval(inames{i});
-            fid = fopen(strcat('externaltools\\',inames{i}),'w');
-            for j=1:length(argv)
-                fprintf(fid,'%f\n',argv(j));
-            end
+    
+    if nargin < 3 
+        expdata = 1;
+    end
+    if expdata
+        export_data;
+    end
+    
+    system(sprintf('externaltools\\run_cuda.exe %s',fname));
+    n = length(onames);
+    varargout = cell(1,n);
+    for i = 1:n
+        fpath = sprintf('externaltools\\%s',onames{i});
+        if exist(fpath, 'file')
+            fid = fopen(fpath, 'r');
+            varargout{i} = textscan(fid, '%f', 'delimiter', '\n');
+            varargout{i} = varargout{i}{1};
             fclose(fid);
+            delete(fpath);
         else
-            inames{i} = [];
+            varargout{i} = 0;
         end
     end
-    inames(cellfun(@isempty,inames))=[];
-    system(sprintf('externaltools\\run_cuda.exe %s',fname));
-    for i = 1:length(inames)
-        delete(sprintf('externaltools\\%s',inames{i}));
-    end
-    output = struct();
-    for i = 1:length(onames)
-        output.(onames{i}) = i;
+    
+    if expdata == 2 && exist('externaltools\config','file')
+        delete('externaltools\config');
     end
 end
