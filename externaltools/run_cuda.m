@@ -25,7 +25,6 @@ function varargout = run_cuda(fname, onames, expdata)
             varargout{i} = 0;
         end
     end
-    
     if expdata == 2 && exist('externaltools\config','file')
         delete('externaltools\config');
     end

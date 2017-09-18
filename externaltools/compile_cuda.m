@@ -2,7 +2,7 @@ function [] = compile_cuda(fname, rmlink)
     if nargin < 2
         rmlink = 1;
     end
-    if nargin < 1 || ~fname
+    if nargin < 1
         fname = 'run_cuda';
     end
 

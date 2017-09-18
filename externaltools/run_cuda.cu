@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include "ArduinoJson.h"
 
 #define devij(dimx, dimy) \
 int i = blockIdx.x % dimx; \
@@ -10,25 +11,19 @@ typedef struct{
     int nx;
     int nz;
     int nt;
-    int set(char *key, float value){
-        switch(key[0]){
-            case 'n':{
-                switch(key[1]){
-                    case 'x': nx = (int)value; return 1;
-                    case 'z': nz = (int)value; return 1;
-                    case 't': nt = (int)value; return 1;
-                    default: return 0;
-                }
-            }
-            default: return 0;
-        }
-    }
-} config;
+    float dt;
+    float Lx;
+    float Lz;
+} fwdcfg;
 typedef struct{
-    float *x;
-    float *y;
-    float *z;
-} stfunc;
+    float *stf_x;
+    float *stf_y;
+    float *stf_z;
+} fwdarg;
+typedef struct{
+    float *vx;
+    float *vz;
+} fwddat;
 
 const int nbt = 8;
 __constant__ int d_nbt = 8;
@@ -70,22 +65,44 @@ namespace mat{
     }
 }
 
-config import_data(void){
-    config cfg;
+fwdcfg import_data(void){
+    fwdcfg cfg;
     FILE *cfgfile = fopen("externaltools/config","r");
-    char cfgkey[50];
-    while(fgets(cfgkey, 50, cfgfile)){
-        float cfgvalue;
-        fscanf(cfgfile, "%f\n", &cfgvalue);
-        cfg.set(cfgkey, cfgvalue);
-    }
+
+    char *buffer = 0;
+    long length;
+
+    fseek (cfgfile, 0, SEEK_END);
+    length = ftell (cfgfile);
+    fseek (cfgfile, 0, SEEK_SET);
+    buffer = (char *)malloc (length + 1);
+    fread (buffer, 1, length, cfgfile);
+    buffer[length] = '\0';
+
     fclose(cfgfile);
+
+    if (buffer){
+        DynamicJsonBuffer jsonBuffer;
+        JsonObject& root = jsonBuffer.parseObject(buffer);
+        if (!root.success()){
+            printf("parseObject() failed\n");
+        }
+        else{
+            cfg.nx = root["nx"];
+            cfg.nz = root["nz"];
+            cfg.nt = root["nt"];
+            cfg.dt = root["dt"];
+            cfg.Lx = root["Lx"];
+            cfg.Lz = root["Lz"];
+        }
+    }
     return cfg;
 }
-void import_data(char *path, float **data, int *len){
+float *import_data(char *path, int *len){
     char fpath[50] = "externaltools/";
     strcat(fpath, path);
     *len = 0;
+    float *data = 0;
     FILE *datafile = fopen(fpath,"r");
     if(datafile){
         while(!feof(datafile)){
@@ -96,30 +113,41 @@ void import_data(char *path, float **data, int *len){
         fclose(datafile);
 
         datafile = fopen(fpath,"r");
-        *data = mat::create_h(*len);
+        data = mat::create_h(*len);
         for(int i=0; i<*len; i++){
-            fscanf(datafile, "%f\n", *data + i);
+            fscanf(datafile, "%f\n", data + i);
         }
         fclose(datafile);
     }
+    return data;
 }
-stfunc prepare_stf(config cfg){
-    stfunc stf;
-    float *data = mat::create_h(cfg.nt);
-    for(int i=0;i<cfg.nt;i++){
-        data[i]=i;
-        // from here
+void define_computational_domain(float Lx, float Lz, int nx, int nz, float *dx, float *dz){
+    *dx = Lx / (nx - 1);
+    *dz = Lz / (nz - 1);
+}
+fwdarg prepare_stf(fwdcfg cfg){
+    float dx, dz;
+    define_computational_domain(cfg.Lx, cfg.Lz, cfg.nx, cfg.nz, &dx, &dz);
+    float *t = mat::create_h(cfg.nt);
+    for(int i = 0; i < cfg.nt; i++){
+        t[i] = i * cfg.dt;
     }
-    stf.x = data;
+    fwdarg stf;// from here
+    // float *data = mat::create_h(cfg.nt);
+    // for(int i=0;i<cfg.nt;i++){
+    //     data[i]=i;
+    //     // from here
+    // }
+    // stf.stf_x = data;
+    printf("lxz %f %f\n",dx,dz);
     return stf;
 }
-stfunc checkstf(config cfg){
+fwdarg checkstf(fwdcfg cfg){
     int len;
-    float *stfall;
-    import_data("stf", &stfall, &len);
+    float *stfall = import_data("stf", &len);
     if(len > 0){
-        stfunc stf;
-        stf.x = stfall;
+        fwdarg stf;
+        stf.stf_x = stfall;
         return stf;
     }
     else{
@@ -130,10 +158,10 @@ void run_wavefield_propagation(void){
 
 }
 void run_forward(void){
-    config cfg = import_data();
-    stfunc stf = checkstf(cfg);
+    fwdcfg cfg = import_data();
+    fwdarg stf = checkstf(cfg);
     printf("nx: %d\nnt: %d\n", cfg.nx, cfg.nt);
-    printf("stf: %f %f %f\n",stf.x[0],stf.x[1],stf.x[2]);
+    printf("stf: %f %f %f\n",stf.stf_x[0],stf.stf_x[1],stf.stf_x[2]);
 }
 
 int main(int argc , char *argv[]){
