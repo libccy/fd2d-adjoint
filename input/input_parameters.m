@@ -36,7 +36,7 @@ fix_density    = 'no'; % 'yes' or 'no'
 % normalise misfits:
 normalise_misfits = 'byfirstmisfit'; % 'byfirstmisfit' or 'div_by_obs' or 'no'
                                   % 'byfirstmisfit':
-                                  % normalises both the s and g misfits by 
+                                  % normalises both the s and g misfits by
                                   % their first value, so that they're same
                                   % order of magnitude
                                   % 'div_by_obs':
@@ -66,13 +66,13 @@ stepInit = 0.002;        % L-BFGS with kernels corrected (July 2015)
 % smoothing kernels?
 smoothing  = 'yessmooth'; % 'yessmooth' or 'nosmooth'
 smoothgwid = 2; % width of the gaussian in the smoothing filter (pixels)
-                % used to be 9 w/ conv2 
-                
+                % used to be 9 w/ conv2
+
 % zero out the bottom 5 rows of the kernel:
 zero_bottom_rows = 'yeszerobottom'; % 'yeszerobottom' or 'nozerobottom'
-                
+
 % store forward wavefield every .. timesteps
-store_fw_every = 10; 
+store_fw_every = 10;
 
 %==========================================================================
 % set basic simulation parameters
@@ -97,7 +97,7 @@ nz = 301;   % PREM: dz = 10 km
 % nz = 581;
 
 % The necesssary time step (in order to obtain a stable model run) may vary
-% according to the chosen gridding. 
+% according to the chosen gridding.
 % dt=1.0;      % time step [s] - PREM model, dx=dz=25km
 % dt = 0.8;    % time step [s] - dx=dz= 20 km
 dt = 0.1; % good for visualising
@@ -117,11 +117,11 @@ use_matfile_startingmodel = 'no';
 % starting_model = '../output/Model_0.03Hz.mat';
 starting_model = './models/Model86_perc_UM100_LM90.mat';
 
-bg_model_type = 10;  
-true_model_type = 13; 
-model_type=10; %(start) 
+bg_model_type = 10;
+true_model_type = 13;
+model_type=10; %(start)
 
-% 1=homogeneous 
+% 1=homogeneous
 % 2=homogeneous with localised density perturbation
 % 3=layered medium
 % 4=layered with localised density perturbation
@@ -160,14 +160,23 @@ model_type=10; %(start)
 %==========================================================================
 
 % 1 src @ centre depth
-src_info.loc_x = 1000e3;
-src_info.loc_z = Lz / 2;
-src_x = src_info.loc_x;
-src_z = src_info.loc_z;
+% src_info.loc_x = 1000e3;
+% src_info.loc_z = Lz / 2;
+% src_x = src_info.loc_x;
+% src_z = src_info.loc_z;
+
+% 4 src @ centre depth
+nsrc = 4;
+src_x= (1: 1: nsrc) * (Lx/(nsrc+1));
+src_z=ones(size(src_x)) * (Lz / 2);
+for ii = 1:nsrc
+    src_info(ii).loc_x = src_x(ii);
+    src_info(ii).loc_z = src_z(ii);
+end
 
 % nsrc = 8;
 % src_depth = 50e3; % source depth beneath surface (m)
-% 
+%
 % %- line of sources that have two sources in the same place - only possible w/ even nsrc
 % pos_x = (1: 1: nsrc/2) * (Lx/(nsrc/2+1));
 % for ii = 1:nsrc
@@ -177,7 +186,7 @@ src_z = src_info.loc_z;
 %         src_info(ii).loc_x = pos_x((ii-1)/2 + 1);
 %     end
 %     src_x(ii) = src_info(ii).loc_x;
-%         
+%
 %     src_info(ii).loc_z = (Lz - src_depth); % sources at 50 km depth
 %     src_z(ii) = src_info(ii).loc_z;
 % end
@@ -201,14 +210,14 @@ clearvars src_depth pos_x;
 
 % with this loop, all sources are the same w/ the same polarisation (7-5-2015)
 for ii = 1:length(src_info)
-    src_info(ii).stf_type = 'ricker';   % 'ricker' or 'delta_bp' (twice butterworth bandpassed 
+    src_info(ii).stf_type = 'ricker';   % 'ricker' or 'delta_bp' (twice butterworth bandpassed
                                          % delta function)
     % needed for 'ricker'
     src_info(ii).tauw_0  = 2.628;         % seconds
     src_info(ii).tauw    = 15*4.0;        % source duration, seconds
     src_info(ii).tee_0   = 15*2.5;        % source start time, seconds
-    
-    % needed for 'delta_bp'    
+
+    % needed for 'delta_bp'
     src_info(ii).f_min=0.006667;          % minimum stf frequency [Hz]
     src_info(ii).f_max=1.0;               % maximum stf frequency [Hz]
 
@@ -217,12 +226,12 @@ for ii = 1:length(src_info)
 %     else % odd
         src_info(ii).stf_PSV = [0 1]; % [x z] --> P waves radiate up/down
 %     end
-                        % direction of the source-time-function in P-SV wave 
+                        % direction of the source-time-function in P-SV wave
                         % propagation. The final stf will be normalised
                         % such that its original amplitude is preserved.
 end
-source_amplitude = 1e9;                 
-                    
+source_amplitude = 1e9;
+
 %- source filtering - 8 frequency bands increasing by a factor 1.25 each time
 f_minlist = [0.00667]; % 0.00667 0.00667 0.00667 0.00667 0.00667 0.00667 0.00667];
 f_maxlist = 0.03179;
@@ -276,7 +285,7 @@ simulation_mode='forward';
 % absorbing boundaries
 %==========================================================================
 
-width = 500.0e3;        % width of the boundary layer in m 
+width = 500.0e3;        % width of the boundary layer in m
 
 absorb_left=1;  % absorb waves on the left boundary
 absorb_right=1; % absorb waves on the right boundary
@@ -291,7 +300,7 @@ absorb_bottom=1;% absorb waves on the bottom boundary
 % plot_every=nt*2; % value larger than nt, so that no plotting takes place
 plot_every = 0;
 
-plot_forward_frames='PSV';   % 'X-Y-Z' or 'X-Y' or 'PSV-SH' or 'PSV' 
+plot_forward_frames='PSV';   % 'X-Y-Z' or 'X-Y' or 'PSV-SH' or 'PSV'
                              % which frames should be plotted in the forward calculation
 
 % some test about plotting the frames differently

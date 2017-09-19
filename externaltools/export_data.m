@@ -10,12 +10,7 @@ function [] = export_data(key, value)
         data.dt = dt;
         data.Lx = Lx;
         data.Lz = Lz;
-%         list = {'nx', 'nz', 'nt', 'Lx', 'Lz','dt'};
-%         for i=1:length(list)
-%             if exist(list{i},'var')
-%                 fprintf(fid, '%s\n%f\n', list{i}, eval(list{i}));
-%             end
-%         end
+        data.src_info = src_info;
         fprintf(fid, '%s', jsonencode(data));
         fclose(fid);
     elseif nargin == 2

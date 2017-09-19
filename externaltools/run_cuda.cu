@@ -14,6 +14,18 @@ typedef struct{
     float dt;
     float Lx;
     float Lz;
+
+    int nsrc;
+    int *stf_type;
+    int *stf_PSV;
+    float *src_x;
+    float *src_z;
+    float *tauw_0;
+    float *tauw;
+    float *tee_0;
+    float *f_min;
+    float *f_max;
+
 } fwdcfg;
 typedef struct{
     float *stf_x;
@@ -41,6 +53,9 @@ namespace mat{
         int *a;
     	cudaMalloc((void**)&a, m * sizeof(int));
     	return a;
+    }
+    int *create_hi(const int m) {
+    	return (int *)malloc(m * sizeof(int));
     }
 
     __global__ void set_d(float *a, const float init, const int m, const int n){
@@ -94,6 +109,41 @@ fwdcfg import_data(void){
             cfg.dt = root["dt"];
             cfg.Lx = root["Lx"];
             cfg.Lz = root["Lz"];
+
+            if(root["src_info"].is<JsonObject>()){
+                JsonObject& src = root["src_info"];
+                DynamicJsonBuffer jsonBufferSrc;
+                JsonArray& src_info = jsonBufferSrc.createArray();
+                src_info.add(src);
+                root.set("src_info",src_info);
+            }
+
+            JsonArray& src_info = root["src_info"];
+            cfg.nsrc = src_info.size();
+            cfg.stf_type = mat::create_hi(cfg.nsrc * sizeof(int));
+            cfg.stf_PSV = mat::create_hi(cfg.nsrc * sizeof(int));
+            cfg.src_x = mat::create_h(cfg.nsrc * sizeof(int));
+            cfg.src_z = mat::create_h(cfg.nsrc * sizeof(int));
+            cfg.tauw_0 = mat::create_h(cfg.nsrc * sizeof(float));
+            cfg.tauw = mat::create_h(cfg.nsrc * sizeof(float));
+            cfg.tee_0 = mat::create_h(cfg.nsrc * sizeof(float));
+            cfg.f_min = mat::create_h(cfg.nsrc * sizeof(float));
+            cfg.f_max = mat::create_h(cfg.nsrc * sizeof(float));
+
+            for(int i = 0; i < cfg.nsrc; i++){
+                JsonObject& src = src_info.get<JsonObject>(i);
+                cfg.src_x[i] = src["loc_x"];
+                cfg.src_z[i] = src["loc_z"];
+                cfg.stf_type[i] = 1; // ricker modify later
+                cfg.stf_PSV[i] = 0; // radiate modify later
+                cfg.tauw_0[i] = src["tauw_0"];
+                cfg.tauw[i] = src["tauw"];
+                cfg.tee_0[i] = src["tee_0"];
+                cfg.f_min[i] = src["f_min"];
+                cfg.f_max[i] = src["f_max"];
+            }
+
+            printf("src %f %f %f\n", cfg.src_x[0], cfg.src_z[0],cfg.tauw_0[0]);
         }
     }
     return cfg;
@@ -133,12 +183,12 @@ fwdarg prepare_stf(fwdcfg cfg){
         t[i] = i * cfg.dt;
     }
     fwdarg stf;// from here
-    // float *data = mat::create_h(cfg.nt);
-    // for(int i=0;i<cfg.nt;i++){
-    //     data[i]=i;
-    //     // from here
-    // }
-    // stf.stf_x = data;
+    float *data = mat::create_h(cfg.nt);
+    for(int i=0;i<cfg.nt;i++){
+        data[i]=i;
+        // from here
+    }
+    stf.stf_x = data;
     printf("lxz %f %f\n",dx,dz);
     return stf;
 }
