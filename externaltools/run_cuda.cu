@@ -201,7 +201,6 @@ fdat *importData(void){
             dat->dt = root["dt"];
             dat->Lx = root["Lx"];
             dat->Lz = root["Lz"];
-
             dat->sfe = root["sfe"];
             dat->model_type = root["model_type"];
             dat->source_amplitude = root["source_amplitude"];
