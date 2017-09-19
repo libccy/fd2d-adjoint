@@ -14,6 +14,7 @@ function [] = export_data(key, value)
         data.src_info = src_info;
         data.sfe = store_fw_every;
         data.model_type = model_type;
+        data.source_amplitude = source_amplitude;
 
         fprintf(fid, '%s', jsonencode(data));
         fclose(fid);
