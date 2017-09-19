@@ -12,6 +12,8 @@ function [] = export_data(key, value)
         data.Lz = Lz;
 
         data.src_info = src_info;
+        data.rec_x = rec_x;
+        data.rec_z = rec_z;
         data.sfe = store_fw_every;
         data.model_type = model_type;
         data.source_amplitude = source_amplitude;

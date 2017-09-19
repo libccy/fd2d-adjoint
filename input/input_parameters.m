@@ -248,9 +248,13 @@ change_freq_every = 1;          % how many iterations with the same freq?
 
 % single receiver
 % 1 receiver @ centre depth
-rec_x = 2000e3;
-rec_z = Lz / 2;
+% rec_x = 2000e3;
+% rec_z = Lz / 2;
 
+% 3 receivers
+nrec = 3;
+rec_x = (1: 1: nrec) * (Lx/(nrec+1));
+rec_z = (1: 1: nrec) * (Lx/(nrec+1));
 
 % %- a line of receivers just below the top boundary
 % nrec = 16;

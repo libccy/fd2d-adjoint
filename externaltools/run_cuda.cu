@@ -28,6 +28,7 @@ typedef struct{
     float source_amplitude;
 
     int nsrc;
+    int nrec;
     int *stf_type;
     float *src_x;
     float *src_z;
@@ -38,6 +39,8 @@ typedef struct{
     float *tee_0;
     float *f_min;
     float *f_max;
+    float *rec_x;
+    float *rec_z;
 
     int **src_x_id;
     int **src_z_id;
@@ -203,41 +206,70 @@ fdat *importData(void){
             dat->model_type = root["model_type"];
             dat->source_amplitude = root["source_amplitude"];
 
-            if(root["src_info"].is<JsonObject>()){
+            int single_src = root["src_info"].is<JsonObject>();
+            int single_rec = root["rec_x"].is<float>();
+
+            dat->nsrc = single_src?1:root["src_info"].size();
+            dat->stf_type = mat::createIntHost(dat->nsrc);
+            dat->src_x = mat::createHost(dat->nsrc);
+            dat->src_z = mat::createHost(dat->nsrc);
+            dat->stf_PSV_x = mat::createHost(dat->nsrc);
+            dat->stf_PSV_z = mat::createHost(dat->nsrc);
+            dat->tauw_0 = mat::createHost(dat->nsrc);
+            dat->tauw = mat::createHost(dat->nsrc);
+            dat->tee_0 = mat::createHost(dat->nsrc);
+            dat->f_min = mat::createHost(dat->nsrc);
+            dat->f_max = mat::createHost(dat->nsrc);
+
+            if(single_src){
                 JsonObject& src = root["src_info"];
-                DynamicJsonBuffer jsonBufferSrc;
-                JsonArray& src_info = jsonBufferSrc.createArray();
-                src_info.add(src);
-                root.set("src_info",src_info);
+                dat->src_x[0] = src["loc_x"];
+                dat->src_z[0] = src["loc_z"];
+                dat->stf_type[0] = 2;
+                dat->stf_PSV_x[0] = src["stf_PSV"][0];
+                dat->stf_PSV_z[0] = src["stf_PSV"][1];
+                dat->tauw_0[0] = src["tauw_0"];
+                dat->tauw[0] = src["tauw"];
+                dat->tee_0[0] = src["tee_0"];
+                dat->f_min[0] = src["f_min"];
+                dat->f_max[0] = src["f_max"];
+            }
+            else{
+                JsonArray& src_info = root["src_info"];
+                for(int i = 0; i < dat->nsrc; i++){
+                    JsonObject& src = src_info.get<JsonObject>(i);
+                    dat->src_x[i] = src["loc_x"];
+                    dat->src_z[i] = src["loc_z"];
+                    dat->stf_type[i] = 2; // ricker: modify later
+                    dat->stf_PSV_x[i] = src["stf_PSV"][0];
+                    dat->stf_PSV_z[i] = src["stf_PSV"][1];
+                    dat->tauw_0[i] = src["tauw_0"];
+                    dat->tauw[i] = src["tauw"];
+                    dat->tee_0[i] = src["tee_0"];
+                    dat->f_min[i] = src["f_min"];
+                    dat->f_max[i] = src["f_max"];
+                }
             }
 
-            JsonArray& src_info = root["src_info"];
-            dat->nsrc = src_info.size();
-            dat->stf_type = mat::createIntHost(dat->nsrc * sizeof(int));
-            dat->src_x = mat::createHost(dat->nsrc * sizeof(float));
-            dat->src_z = mat::createHost(dat->nsrc * sizeof(float));
-            dat->stf_PSV_x = mat::createHost(dat->nsrc * sizeof(float));
-            dat->stf_PSV_z = mat::createHost(dat->nsrc * sizeof(float));
-            dat->tauw_0 = mat::createHost(dat->nsrc * sizeof(float));
-            dat->tauw = mat::createHost(dat->nsrc * sizeof(float));
-            dat->tee_0 = mat::createHost(dat->nsrc * sizeof(float));
-            dat->f_min = mat::createHost(dat->nsrc * sizeof(float));
-            dat->f_max = mat::createHost(dat->nsrc * sizeof(float));
-
-            for(int i = 0; i < dat->nsrc; i++){
-                JsonObject& src = src_info.get<JsonObject>(i);
-                dat->src_x[i] = src["loc_x"];
-                dat->src_z[i] = src["loc_z"];
-                dat->stf_type[i] = 2; // ricker: modify later
-                dat->stf_PSV_x[i] = src["stf_PSV"][0];
-                dat->stf_PSV_z[i] = src["stf_PSV"][1];
-                dat->tauw_0[i] = src["tauw_0"];
-                dat->tauw[i] = src["tauw"];
-                dat->tee_0[i] = src["tee_0"];
-                dat->f_min[i] = src["f_min"];
-                dat->f_max[i] = src["f_max"];
+            dat->nrec = single_rec?1:root["rec_x"].size();
+            dat->rec_x = mat::createHost(dat->nrec);
+            dat->rec_z = mat::createHost(dat->nrec);
+            
+            if(single_rec){
+                dat->rec_x[0] = root["rec_x"];
+                dat->rec_z[0] = root["rec_z"];
             }
+            else{
+                JsonArray& rec_x = root["rec_x"];
+                JsonArray& rec_z = root["rec_z"];
+                for(int i = 0; i < dat->nrec; i++){
+                    dat->rec_x[i] = rec_x.get<float>(i);
+                    dat->rec_z[i] = rec_z.get<float>(i);
+                }
+            }
+            printf("rec %f %f %f %f\n",dat->src_x[0],dat->src_z[0],dat->rec_x[0],dat->rec_z[0]);
         }
+        jsonBuffer.clear();
     }
     return dat;
 }
@@ -368,7 +400,7 @@ void runForward(void){
     fdat *dat = importData();
     defineComputationalDomain(dat);
     checkArgs(dat);
-    exportData(dat->stf_z[1],dat->nt,"stf_z"); // modify later
+    exportData(dat->stf_z[0],dat->nt,"stf_z"); // modify later
     if(!dat->update_params){
         defineMaterialParameters(dat);
     }
