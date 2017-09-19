@@ -1,11 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
+#include <string.h>
 #include "ArduinoJson.h"
 
 #define devij(dimx, dimy) \
 int i = blockIdx.x % dimx; \
 int j = threadIdx.x + (blockIdx.x - i) / dimx * dimy / d_nbt; \
 int ij = i * dimy + j
+
+const float pi = 3.14159265;
 
 typedef struct{
     int nx;
@@ -15,9 +19,14 @@ typedef struct{
     float Lx;
     float Lz;
 
+    int sfe;
+    int updateParams;
+    int model_type;
+
     int nsrc;
     int *stf_type;
-    int *stf_PSV;
+    float *stf_PSV_x;
+    float *stf_PSV_z;
     float *src_x;
     float *src_z;
     float *tauw_0;
@@ -26,16 +35,10 @@ typedef struct{
     float *f_min;
     float *f_max;
 
-} fwdcfg;
-typedef struct{
     float *stf_x;
     float *stf_y;
     float *stf_z;
-} fwdarg;
-typedef struct{
-    float *vx;
-    float *vz;
-} fwddat;
+} fdat;
 
 const int nbt = 8;
 __constant__ int d_nbt = 8;
@@ -46,33 +49,44 @@ namespace mat{
     	cudaMalloc((void**)&a, m * sizeof(float));
     	return a;
     }
-    float *create_h(const int m) {
+    float *createHost(const int m) {
     	return (float *)malloc(m * sizeof(float));
     }
-    int *create_i(const int m){
+    int *createInt(const int m){
         int *a;
     	cudaMalloc((void**)&a, m * sizeof(int));
     	return a;
     }
-    int *create_hi(const int m) {
+    int *createIntHost(const int m) {
     	return (int *)malloc(m * sizeof(int));
     }
 
-    __global__ void set_d(float *a, const float init, const int m, const int n){
+    float maxHost(float *a, const int m) {
+        // whether needed: modify later
+        float max = fabs(a[0]);
+        for(int i = 1; i < m; i++){
+            if(fabs(a[i]) > max){
+                max = fabs(a[i]);
+            }
+        }
+        return max;
+    }
+
+    __global__ void setDevice(float *a, const float init, const int m, const int n){
         devij(m, n);
         a[ij] = init;
     }
     void set(float *a, const float init, const int m, const int n){
-        mat::set_d<<<m * nbt, n / nbt>>>(a, init, m, n);
+        mat::setDevice<<<m * nbt, n / nbt>>>(a, init, m, n);
     }
-    void copyhd(float *d_a, const float *a, const int m){
+    void copyHostToDevice(float *d_a, const float *a, const int m){
         cudaMemcpy(d_a, a , m * sizeof(float), cudaMemcpyHostToDevice);
     }
-    void copydh(float *a, const float *d_a, const int m){
+    void copyDeviceToHost(float *a, const float *d_a, const int m){
         cudaMemcpy(a, d_a , m * sizeof(float), cudaMemcpyDeviceToHost);
     }
     void write(FILE *file, float *d_a, float *a, const int m){
-        mat::copydh(a, d_a, m);
+        mat::copyDeviceToHost(a, d_a, m);
         fwrite(a, sizeof(float), m, file);
     }
     void read(FILE *file, float *a, const int m){
@@ -80,21 +94,21 @@ namespace mat{
     }
 }
 
-fwdcfg import_data(void){
-    fwdcfg cfg;
-    FILE *cfgfile = fopen("externaltools/config","r");
+fdat *importData(void){
+    fdat *dat = new fdat;
+    FILE *datfile = fopen("externaltools/config","r");
 
     char *buffer = 0;
     long length;
 
-    fseek (cfgfile, 0, SEEK_END);
-    length = ftell (cfgfile);
-    fseek (cfgfile, 0, SEEK_SET);
+    fseek (datfile, 0, SEEK_END);
+    length = ftell (datfile);
+    fseek (datfile, 0, SEEK_SET);
     buffer = (char *)malloc (length + 1);
-    fread (buffer, 1, length, cfgfile);
+    fread (buffer, 1, length, datfile);
     buffer[length] = '\0';
 
-    fclose(cfgfile);
+    fclose(datfile);
 
     if (buffer){
         DynamicJsonBuffer jsonBuffer;
@@ -103,12 +117,15 @@ fwdcfg import_data(void){
             printf("parseObject() failed\n");
         }
         else{
-            cfg.nx = root["nx"];
-            cfg.nz = root["nz"];
-            cfg.nt = root["nt"];
-            cfg.dt = root["dt"];
-            cfg.Lx = root["Lx"];
-            cfg.Lz = root["Lz"];
+            dat->nx = root["nx"];
+            dat->nz = root["nz"];
+            dat->nt = root["nt"];
+            dat->dt = root["dt"];
+            dat->Lx = root["Lx"];
+            dat->Lz = root["Lz"];
+
+            dat->sfe = root["sfe"];
+            dat->model_type = root["model_type"];
 
             if(root["src_info"].is<JsonObject>()){
                 JsonObject& src = root["src_info"];
@@ -119,36 +136,36 @@ fwdcfg import_data(void){
             }
 
             JsonArray& src_info = root["src_info"];
-            cfg.nsrc = src_info.size();
-            cfg.stf_type = mat::create_hi(cfg.nsrc * sizeof(int));
-            cfg.stf_PSV = mat::create_hi(cfg.nsrc * sizeof(int));
-            cfg.src_x = mat::create_h(cfg.nsrc * sizeof(int));
-            cfg.src_z = mat::create_h(cfg.nsrc * sizeof(int));
-            cfg.tauw_0 = mat::create_h(cfg.nsrc * sizeof(float));
-            cfg.tauw = mat::create_h(cfg.nsrc * sizeof(float));
-            cfg.tee_0 = mat::create_h(cfg.nsrc * sizeof(float));
-            cfg.f_min = mat::create_h(cfg.nsrc * sizeof(float));
-            cfg.f_max = mat::create_h(cfg.nsrc * sizeof(float));
+            dat->nsrc = src_info.size();
+            dat->stf_type = mat::createIntHost(dat->nsrc * sizeof(int));
+            dat->src_x = mat::createHost(dat->nsrc * sizeof(float));
+            dat->src_z = mat::createHost(dat->nsrc * sizeof(float));
+            dat->stf_PSV_x = mat::createHost(dat->nsrc * sizeof(float));
+            dat->stf_PSV_z = mat::createHost(dat->nsrc * sizeof(float));
+            dat->tauw_0 = mat::createHost(dat->nsrc * sizeof(float));
+            dat->tauw = mat::createHost(dat->nsrc * sizeof(float));
+            dat->tee_0 = mat::createHost(dat->nsrc * sizeof(float));
+            dat->f_min = mat::createHost(dat->nsrc * sizeof(float));
+            dat->f_max = mat::createHost(dat->nsrc * sizeof(float));
 
-            for(int i = 0; i < cfg.nsrc; i++){
+            for(int i = 0; i < dat->nsrc; i++){
                 JsonObject& src = src_info.get<JsonObject>(i);
-                cfg.src_x[i] = src["loc_x"];
-                cfg.src_z[i] = src["loc_z"];
-                cfg.stf_type[i] = 1; // ricker modify later
-                cfg.stf_PSV[i] = 0; // radiate modify later
-                cfg.tauw_0[i] = src["tauw_0"];
-                cfg.tauw[i] = src["tauw"];
-                cfg.tee_0[i] = src["tee_0"];
-                cfg.f_min[i] = src["f_min"];
-                cfg.f_max[i] = src["f_max"];
+                dat->src_x[i] = src["loc_x"];
+                dat->src_z[i] = src["loc_z"];
+                dat->stf_type[i] = 2; // ricker: modify later
+                dat->stf_PSV_x[i] = src["stf_PSV"][0];
+                dat->stf_PSV_z[i] = src["stf_PSV"][1];
+                dat->tauw_0[i] = src["tauw_0"];
+                dat->tauw[i] = src["tauw"];
+                dat->tee_0[i] = src["tee_0"];
+                dat->f_min[i] = src["f_min"];
+                dat->f_max[i] = src["f_max"];
             }
-
-            printf("src %f %f %f\n", cfg.src_x[0], cfg.src_z[0],cfg.tauw_0[0]);
         }
     }
-    return cfg;
+    return dat;
 }
-float *import_data(char *path, int *len){
+float *importData(char *path, int *len){
     char fpath[50] = "externaltools/";
     strcat(fpath, path);
     *len = 0;
@@ -163,7 +180,7 @@ float *import_data(char *path, int *len){
         fclose(datafile);
 
         datafile = fopen(fpath,"r");
-        data = mat::create_h(*len);
+        data = mat::createHost(*len);
         for(int i=0; i<*len; i++){
             fscanf(datafile, "%f\n", data + i);
         }
@@ -171,53 +188,100 @@ float *import_data(char *path, int *len){
     }
     return data;
 }
-void define_computational_domain(float Lx, float Lz, int nx, int nz, float *dx, float *dz){
+void exportData(float *data, int len, char *fname){
+    char buffer[50] = "externaltools/";
+    strcat(buffer, fname);
+    FILE *file = fopen(buffer, "w");
+    for(int i = 0; i < len; i++){
+        fprintf(file, "%f\n", data[i]);
+    }
+    fclose(file);
+}
+void defineComputationalDomain(float Lx, float Lz, int nx, int nz, float *dx, float *dz){
     *dx = Lx / (nx - 1);
     *dz = Lz / (nz - 1);
 }
-fwdarg prepare_stf(fwdcfg cfg){
-    float dx, dz;
-    define_computational_domain(cfg.Lx, cfg.Lz, cfg.nx, cfg.nz, &dx, &dz);
-    float *t = mat::create_h(cfg.nt);
-    for(int i = 0; i < cfg.nt; i++){
-        t[i] = i * cfg.dt;
+float *makeSourceTimeFunction(fdat *dat, int index){
+    float *stf = mat::createHost(dat->nt);
+    float max = 0;
+    float alfa = 2 * dat->tauw_0[index] / dat->tauw[index];
+    for(int i = 0; i < dat->nt; i++){
+        float t = i * dat->dt;
+        switch(dat -> stf_type[index]){
+            case 2:{
+                stf[i] = (-2 * pow(alfa, 3) / pi) * (t - dat->tee_0[index]) * exp(-pow(alfa, 2) * pow(t - dat->tee_0[index], 2));
+                break;
+            }
+            // other stf: modify later
+        }
+
+        if(fabs(stf[i]) > max){
+            max = fabs(stf[i]);
+        }
     }
-    fwdarg stf;// from here
-    float *data = mat::create_h(cfg.nt);
-    for(int i=0;i<cfg.nt;i++){
-        data[i]=i;
-        // from here
+    if(max > 0){
+        for(int i = 0; i > dat->nt; i++){
+            stf[i] /= max;
+        }
     }
-    stf.stf_x = data;
-    printf("lxz %f %f\n",dx,dz);
     return stf;
 }
-fwdarg checkstf(fwdcfg cfg){
-    int len;
-    float *stfall = import_data("stf", &len);
-    if(len > 0){
-        fwdarg stf;
-        stf.stf_x = stfall;
-        return stf;
+void prepareSTF(fdat *dat){
+    float dx, dz;
+    defineComputationalDomain(dat->Lx, dat->Lz, dat->nx, dat->nz, &dx, &dz);
+    float *t = mat::createHost(dat->nt);
+    int nt = dat->nt;
+    for(int i = 0; i < nt; i++){
+        t[i] = i * dat->dt;
     }
-    else{
-        return prepare_stf(cfg);
+
+    dat->stf_x = mat::createHost(nt * dat->nsrc);
+    dat->stf_y = mat::createHost(nt * dat->nsrc);
+    dat->stf_z = mat::createHost(nt * dat->nsrc);
+    for(int i=0; i < dat->nsrc; i++){
+        float *stfn = makeSourceTimeFunction(dat, i);
+        float px = dat->stf_PSV_x[i];
+        float pz = dat->stf_PSV_z[i];
+        float norm = sqrt(pow(px,2) + pow(pz,2));
+        for(int j = 0; j < nt; j++){
+            dat->stf_x[i * nt + j] = stfn[j] * px / norm;
+            dat->stf_y[i * nt + j] = stfn[j];
+            dat->stf_z[i * nt + j] = stfn[j] * pz / norm;
+        }
     }
 }
-void run_wavefield_propagation(void){
+void checkArgs(fdat *dat){
+    // int len;
+    // add input file option: modify later
+    // if updateParams == 1  defineMaterialParameters here
+    // float *stfall = importData("stf", &len);
+    // if(len > 0){
+    //     stf.stf_x = stfall;
+    //     return stf;
+    // }
+    dat -> updateParams = 0;
+    prepareSTF(dat);
+}
+void defineMaterialParameters(fdat *dat){
+    // from here
+}
+void runWaveFieldPropagation(void){
 
 }
-void run_forward(void){
-    fwdcfg cfg = import_data();
-    fwdarg stf = checkstf(cfg);
-    printf("nx: %d\nnt: %d\n", cfg.nx, cfg.nt);
-    printf("stf: %f %f %f\n",stf.stf_x[0],stf.stf_x[1],stf.stf_x[2]);
+void runForward(void){
+    printf("initialising...\n");
+    fdat *dat = importData();
+    checkArgs(dat);
+    exportData(dat->stf_z,dat->nt,"stf_z");
+    if(!dat->updateParams){
+        defineMaterialParameters(dat);
+    }
 }
 
 int main(int argc , char *argv[]){
     for(int i = 0; i< argc; i++){
-        if(strcmp(argv[i],"run_forward") == 0){
-            run_forward();
+        if(strcmp(argv[i],"runForward") == 0){
+            runForward();
         }
     }
     return 0;

@@ -10,7 +10,11 @@ function [] = export_data(key, value)
         data.dt = dt;
         data.Lx = Lx;
         data.Lz = Lz;
+
         data.src_info = src_info;
+        data.sfe = store_fw_every;
+        data.model_type = model_type;
+
         fprintf(fid, '%s', jsonencode(data));
         fclose(fid);
     elseif nargin == 2

@@ -1,7 +1,9 @@
 tic;
 % [v_rec,t,u_fw,v_fw,rec_x,rec_z]=run_forward;
-[configx] = run_cuda('run_forward',{'configx'});
+[stf_x,stf_y,stf_z] = run_cuda('runForward',{'stf_x','stf_y','stf_z'});
 toc;
+
+% plot(1:5000, stf_z);
 
 % stf = prepare_stf;
 % stf = {stf.stf};

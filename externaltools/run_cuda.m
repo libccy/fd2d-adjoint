@@ -19,6 +19,7 @@ function varargout = run_cuda(fname, onames, expdata)
             fid = fopen(fpath, 'r');
             varargout{i} = textscan(fid, '%f', 'delimiter', '\n');
             varargout{i} = varargout{i}{1};
+            varargout{i} = varargout{i}';
             fclose(fid);
             delete(fpath);
         else
