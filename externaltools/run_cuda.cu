@@ -29,15 +29,20 @@ typedef struct{
 
     int nsrc;
     int *stf_type;
-    float *stf_PSV_x;
-    float *stf_PSV_z;
     float *src_x;
     float *src_z;
+    float *stf_PSV_x;
+    float *stf_PSV_z;
     float *tauw_0;
     float *tauw;
     float *tee_0;
     float *f_min;
     float *f_max;
+
+    int **src_x_id;
+    int **src_z_id;
+    int **rec_x_id;
+    int **rec_z_id;
 
     float **stf_x;
     float **stf_y;
@@ -66,6 +71,30 @@ namespace mat{
         mat[i] = data + n * i;
     }
 
+
+    float *init(float *mat, const int m, const float init){
+        mat::_setValue<<<1, m>>>(mat, init, m);
+        return mat;
+    }
+    float **init(float **mat, const int m, const int n, const float init){
+        mat::_setValue<<<m * nbt, n / nbt>>>(mat, init, m, n);
+        return mat;
+    }
+    float *initHost(float *mat, const int m, const float init){
+        for(int i = 0; i < m; i++){
+            mat[i] = init;
+        }
+        return mat;
+    }
+    float **initHost(float **mat, const int m, const int n, const float init){
+        for(int i = 0; i < m; i++){
+            for(int j = 0; j < n; j++){
+                mat[i][j] = init;
+            }
+        }
+        return mat;
+    }
+
     float *create(const int m) {
     	float *data;
     	cudaMalloc((void**)&data, m * sizeof(float));
@@ -79,6 +108,9 @@ namespace mat{
         mat::_setPointerValue<<<1, m>>>(mat, data, n);
     	return mat;
     }
+    float **create(const int m, const int n, const float init){
+        return mat::init(mat::create(m,n), m, n, init);
+    }
     float *createHost(const int m) {
     	return (float *)malloc(m * sizeof(float));
     }
@@ -89,6 +121,9 @@ namespace mat{
     		mat[i] = data + n * i;
     	}
     	return mat;
+    }
+    float **createHost(const int m, const int n, const float init){
+        return mat::initHost(mat::createHost(m,n), m, n, init);
     }
     int *createInt(const int m){
         int *a;
@@ -115,28 +150,6 @@ namespace mat{
     	return mat;
     }
 
-    float *init(float *mat, const float init, const int m){
-        mat::_setValue<<<1, m>>>(mat, init, m);
-        return mat;
-    }
-    float **init(float **mat, const float init, const int m, const int n){
-        mat::_setValue<<<m * nbt, n / nbt>>>(mat, init, m, n);
-        return mat;
-    }
-    float *initHost(float *mat, const float init, const int m){
-        for(int i = 0; i < m; i++){
-            mat[i] = init;
-        }
-        return mat;
-    }
-    float **initHost(float **mat, const float init, const int m, const int n){
-        for(int i = 0; i < m; i++){
-            for(int j = 0; j < n; j++){
-                mat[i][j] = init;
-            }
-        }
-        return mat;
-    }
 
     void copyHostToDevice(float *d_a, const float *a, const int m){
         cudaMemcpy(d_a, a , m * sizeof(float), cudaMemcpyHostToDevice);
@@ -322,33 +335,36 @@ void checkArgs(fdat *dat){
     //     return stf;
     // }
     dat->update_params = 0;
+    float *t = mat::createHost(dat->nt);
+    for(int i = 0; i < dat->nt; i++){
+        t[i] = i * dat->dt;
+    }
+    exportData(t, dat->nt, "t");
     prepareSTF(dat);
 }
 void defineMaterialParameters(fdat *dat){
     // more model_type: modify later
-    // int nx = dat->nx;
-    // int nz = dat->nz;
-    // switch(dat->model_type){
-    //     case 1:{
-    //         dat->rho = mat::init(mat::createHost(nx, nz), nx, nz, 3000);
-    //         dat->mu = mat::init(mat::createHost(nx, nz), nx, nz, 4.8e10);
-    //         dat->lambda = mat::init(mat::createHost(nx, nz), nx, nz, 4.8e10);
-    //         break;
-    //     }
-    //     case 10:{
-    //         dat->rho = mat::init(mat::createHost(nx, nz), nx, nz 2600);
-    //         dat->mu = mat::init(mat::createHost(nx, nz), nx, nz 2.66e10);
-    //         dat->lambda = mat::init(mat::createHost(nx, nz), nx, nz 3.42e10);
-    //         break;
-    //     }
-    // }
-
+    int nx = dat->nx;
+    int nz = dat->nz;
+    switch(dat->model_type){
+        case 1:{
+            dat->rho = mat::createHost(nx, nz, 3000);
+            dat->mu = mat::createHost(nx, nz, 4.8e10);
+            dat->lambda = mat::createHost(nx, nz, 4.8e10);
+            break;
+        }
+        case 10:{
+            dat->rho = mat::createHost(nx, nz, 2600);
+            dat->mu = mat::createHost(nx, nz, 2.66e10);
+            dat->lambda = mat::createHost(nx, nz, 3.42e10);
+            break;
+        }
+    }
 }
 void runWaveFieldPropagation(void){
 
 }
 void runForward(void){
-    printf("initialising...\n");
     fdat *dat = importData();
     defineComputationalDomain(dat);
     checkArgs(dat);
@@ -356,7 +372,7 @@ void runForward(void){
     if(!dat->update_params){
         defineMaterialParameters(dat);
     }
-
+    //next: compute_indices
 }
 
 int main(int argc , char *argv[]){
