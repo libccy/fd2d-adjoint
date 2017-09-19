@@ -3,7 +3,7 @@ tic;
 [stf_x,stf_y,stf_z] = run_cuda('runForward',{'stf_x','stf_y','stf_z'});
 toc;
 
-plot(1:5000, stf_z);
+% plot(1:5000, stf_z);
 
 % stf = prepare_stf;
 % stf = {stf.stf};

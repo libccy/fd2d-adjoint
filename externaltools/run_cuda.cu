@@ -283,11 +283,10 @@ float *makeSourceTimeFunction(fdat *dat, int index){
         }
     }
     if(max > 0){
-        for(int i = 0; i > dat->nt; i++){
+        for(int i = 0; i < dat->nt; i++){
             stf[i] /= max;
         }
     }
-    printf("max %f\n", max);
     return stf;
 }
 void prepareSTF(fdat *dat){
@@ -301,7 +300,6 @@ void prepareSTF(fdat *dat){
     dat->stf_y = mat::createHost(dat->nsrc, nt);
     dat->stf_z = mat::createHost(dat->nsrc, nt);
     float amp = dat->source_amplitude / dat->dx / dat->dz;
-    printf("amp %f %f %f %f\n", dat->source_amplitude,dat->dx,dat->dz,amp);
     for(int i=0; i < dat->nsrc; i++){
         float *stfn = makeSourceTimeFunction(dat, i);
         float px = dat->stf_PSV_x[i];
