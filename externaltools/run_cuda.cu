@@ -207,8 +207,6 @@ fdat *importData(void){
             dat->source_amplitude = root["source_amplitude"];
 
             int single_src = root["src_info"].is<JsonObject>();
-            int single_rec = root["rec_x"].is<float>();
-
             dat->nsrc = single_src?1:root["src_info"].size();
             dat->stf_type = mat::createIntHost(dat->nsrc);
             dat->src_x = mat::createHost(dat->nsrc);
@@ -235,6 +233,7 @@ fdat *importData(void){
                 dat->f_max[i] = src["f_max"];
             }
 
+            int single_rec = root["rec_x"].is<float>();
             dat->nrec = single_rec?1:root["rec_x"].size();
             dat->rec_x = mat::createHost(dat->nrec);
             dat->rec_z = mat::createHost(dat->nrec);
