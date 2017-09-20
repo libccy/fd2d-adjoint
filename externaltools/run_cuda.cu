@@ -100,10 +100,6 @@ namespace mat{
         int i = threadIdx.x;
         mat[i] = data + n * i;
     }
-    __global__ void _setIntPointerValue(int **mat, int *data, const int n){
-        int i = threadIdx.x;
-        mat[i] = data + n * i;
-    }
 
 
     float *init(float *mat, const int m, const float init){
@@ -135,55 +131,37 @@ namespace mat{
     	return data;
     }
     float **create(const int m, const int n){
-    	float *data;
-    	cudaMalloc((void**)&data, m * n * sizeof(float));
+    	float *data = mat::create(m * n);
         float **mat;
         cudaMalloc((void**)&mat, m * sizeof(float *));
         mat::_setPointerValue<<<1, m>>>(mat, data, n);
     	return mat;
     }
     float **create(const int m, const int n, const float init){
-        return mat::init(mat::create(m,n), m, n, init);
+        return mat::init(mat::create(m, n), m, n, init);
     }
     float *createHost(const int m) {
     	return (float *)malloc(m * sizeof(float));
     }
     float **createHost(const int m, const int n){
+        float *data = mat::createHost(m * n);
     	float **mat = (float **)malloc(m * sizeof(float *));
-    	float *data = (float *)malloc(m * n * sizeof(float));
     	for(int i  =0; i < m; i++){
     		mat[i] = data + n * i;
     	}
     	return mat;
     }
     float **createHost(const int m, const int n, const float init){
-        return mat::initHost(mat::createHost(m,n), m, n, init);
+        return mat::initHost(mat::createHost(m, n), m, n, init);
     }
     int *createInt(const int m){
         int *a;
     	cudaMalloc((void**)&a, m * sizeof(int));
     	return a;
     }
-    int **createInt(const int m, const int n){
-    	int *data;
-    	cudaMalloc((void**)&data, m * n * sizeof(int));
-        int **mat;
-        cudaMalloc((void**)&mat, m * sizeof(int *));
-        mat::_setIntPointerValue<<<1, m>>>(mat, data, n);
-    	return mat;
-    }
     int *createIntHost(const int m) {
     	return (int *)malloc(m * sizeof(int));
     }
-    int **createIntHost(const int m, const int n){
-    	int **mat = (int **)malloc(m * sizeof(int *));
-    	int *data = (int *)malloc(m * n * sizeof(int));
-    	for(int i  =0; i < m; i++){
-    		mat[i] = data + n * i;
-    	}
-    	return mat;
-    }
-
 
     void copyHostToDevice(float *d_a, const float *a, const int m){
         cudaMemcpy(d_a, a , m * sizeof(float), cudaMemcpyHostToDevice);
@@ -202,17 +180,17 @@ namespace mat{
         cudaMemcpy(*pa, *phd_a , m * n * sizeof(float), cudaMemcpyDeviceToHost);
     }
 
-    float *read(int len, char *fname){
-        float *data = (float *)malloc(len * sizeof(float));
-        mat::read(data, len, fname);
-        return data;
-    }
     void read(float *data, int len, char *fname){
         char buffer[50] = "externaltools/";
         strcat(buffer, fname);
         FILE *file = fopen(buffer, "rb");
         fwrite(data, sizeof(float), len, file);
         fclose(file);
+    }
+    float *read(int len, char *fname){
+        float *data = (float *)malloc(len * sizeof(float));
+        mat::read(data, len, fname);
+        return data;
     }
     void write(float *data, int len, char *fname){
         char buffer[50] = "externaltools/";
@@ -551,9 +529,9 @@ void runWaveFieldPropagation(fdat *dat){
     initialiseAbsorbingBoundaries(dat);
     printf("iterating...\n");
 
-    for(int n = 0; n < nt; n++){
-        if((n+1)%sfe == 0){
-            
+    for(int n = 0; n < dat->nt; n++){
+        if((n + 1) % dat->sfe == 0){
+
         }
     }
 }
