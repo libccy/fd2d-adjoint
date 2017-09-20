@@ -96,9 +96,16 @@ namespace mat{
         devij(m, n);
         mat[i][j] = init;
     }
+    __global__ void _setValue(float ***mat, const float init, const int m, const int n, const int p){
+        devij(m, n);
+        mat[p][i][j] = init;
+    }
     __global__ void _setPointerValue(float **mat, float *data, const int n){
         int i = threadIdx.x;
         mat[i] = data + n * i;
+    }
+    __global__ void _setPointerValue(float ***mat, float **data, const int i){
+        mat[i] = data;
     }
 
 
@@ -108,6 +115,12 @@ namespace mat{
     }
     float **init(float **mat, const int m, const int n, const float init){
         mat::_setValue<<<m * nbt, n / nbt>>>(mat, init, m, n);
+        return mat;
+    }
+    float ***init(float ***mat, const int p, const int m, const int n, const float init){
+        for(int i = 0; i < p; i++){
+            mat::_setValue<<<m * nbt, n / nbt>>>(mat, init, m, n, i);
+        }
         return mat;
     }
     float *initHost(float *mat, const int m, const float init){
@@ -124,18 +137,36 @@ namespace mat{
         }
         return mat;
     }
+    float ***initHost(float ***mat, const int p, const int m, const int n, float init){
+        for(int k = 0; k < p; k++){
+            for(int i = 0; i < m; i++){
+                for(int j = 0; j < n; j++){
+                    mat[k][i][j] = init;
+                }
+            }
+        }
+        return mat;
+    }
 
     float *create(const int m) {
     	float *data;
-    	cudaMalloc((void**)&data, m * sizeof(float));
+    	cudaMalloc((void **)&data, m * sizeof(float));
     	return data;
     }
     float **create(const int m, const int n){
     	float *data = mat::create(m * n);
         float **mat;
-        cudaMalloc((void**)&mat, m * sizeof(float *));
+        cudaMalloc((void **)&mat, m * sizeof(float *));
         mat::_setPointerValue<<<1, m>>>(mat, data, n);
     	return mat;
+    }
+    float ***create(const int p, const int m, const int n){
+        float ***mat;
+        cudaMalloc((void **)&mat, p * sizeof(float **));
+        for(int i = 0; i < p; i++){
+            mat::_setPointerValue<<<1,1>>>(mat, mat::create(m, n), i);
+        }
+        return mat;
     }
     float *createHost(const int m) {
     	return (float *)malloc(m * sizeof(float));
@@ -147,6 +178,13 @@ namespace mat{
     		mat[i] = data + n * i;
     	}
     	return mat;
+    }
+    float ***createHost(const int p, const int m, const int n){
+        float ***mat = (float ***)malloc(p * sizeof(float **));
+        for(int i = 0; i < p; i++){
+            mat[i] = mat::createHost(m, n);
+        }
+        return mat;
     }
     int *createInt(const int m){
         int *a;
@@ -165,6 +203,13 @@ namespace mat{
         cudaMemcpy(phd_a, pd_a , sizeof(float *), cudaMemcpyDeviceToHost);
         cudaMemcpy(*phd_a, *pa , m * n * sizeof(float), cudaMemcpyHostToDevice);
     }
+    void copyHostToDevice(float ***pd_a, float ***pa, const int p, const int m, const int n){
+        float ***phd_a=(float ***)malloc(p * sizeof(float **));
+        cudaMemcpy(phd_a, pd_a, p * sizeof(float **), cudaMemcpyDeviceToHost);
+        for(int i = 0; i < p; i++){
+            mat::copyHostToDevice(phd_a[i], pa[i], m, n);
+        }
+    }
     void copyDeviceToHost(float *a, const float *d_a, const int m){
         cudaMemcpy(a, d_a , m * sizeof(float), cudaMemcpyDeviceToHost);
     }
@@ -172,6 +217,13 @@ namespace mat{
         float **phd_a=(float **)malloc(sizeof(float *));
         cudaMemcpy(phd_a, pd_a , sizeof(float *), cudaMemcpyDeviceToHost);
         cudaMemcpy(*pa, *phd_a , m * n * sizeof(float), cudaMemcpyDeviceToHost);
+    }
+    void copyDeviceToHost(float ***pa, float ***pd_a, const int p, const int m, const int n){
+        float ***phd_a=(float ***)malloc(p * sizeof(float **));
+        cudaMemcpy(phd_a, pd_a, p * sizeof(float **), cudaMemcpyDeviceToHost);
+        for(int i = 0; i < p; i++){
+            mat::copyDeviceToHost(pa[i], phd_a[i], m, n);
+        }
     }
 
     void read(float *data, int len, char *fname){
@@ -537,7 +589,7 @@ void runWaveFieldPropagation(fdat *dat){
 
     for(int n = 0; n < dat->nt; n++){
         if((n + 1) % dat->sfe == 0){
-
+            // next convert u/v_forward to 3D array
         }
     }
 }
@@ -579,43 +631,12 @@ void runForward(void){
     mat::write(dat->stf_z[0],dat->nt,"stf_z"); // modify later
 }
 
-__global__ void add(float **a,float **b,float **c){
-    devij(3,3);
-    c[i][j]=a[i][j]+b[i][j];
-}
-void print(float **a,int m, int n){
-    for(int i=0;i<m;i++){
-        for(int j=0;j<n;j++){
-            printf("%f ",a[i][j]);
-        }
-        printf("\n");
-    }
-}
-void print(float ***a,int p,int m, int n){
-    for(int k=0;k<p;k++){
-        print(a[k],m,n);
-        printf("\n");
-        printf("\n");
-    }
-
-}
 int main(int argc , char *argv[]){
-    // for(int i = 0; i< argc; i++){
-    //     if(strcmp(argv[i],"runForward") == 0){
-    //         runForward();
-    //     }
-    // }
-    float **a=mat::init(mat::create(3,3),3,3,1);
-    float **b=mat::init(mat::create(3,3),3,3,6);
-    float **c=mat::create(3,3);
-    add<<<3,3>>>(a,b,c);
-    float **d=mat::createHost(3,3);
-    mat::copyDeviceToHost(d,c,3,3);
-    print(d,3,3);
-    // float ***a=mat::createHost(3,3,3);
-    // mat::initHost(a,3,3,3,4.7);
-    // print(a,3,3,3);
-
+    for(int i = 0; i< argc; i++){
+        if(strcmp(argv[i],"runForward") == 0){
+            runForward();
+        }
+    }
 
     return 0;
 }
