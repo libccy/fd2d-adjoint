@@ -26,6 +26,14 @@ function [] = export_data(key, value)
         data.rec_x = rec_x;
         data.rec_z = rec_z;
         data.source_amplitude = source_amplitude;
+        data.wave_propagation_type = wave_propagation_type;
+        data.simulation_mode = simulation_mode;
+        
+        data.width = width;
+        data.absorb_left = absorb_left;
+        data.absorb_right = absorb_right;
+        data.absorb_top = absorb_top;
+        data.absorb_bottom = absorb_bottom;
 
         if nargin > 0 && isstruct(key)
             if isfield(key,'lambda') && isfield(key,'mu') && isfield(key,'rho')

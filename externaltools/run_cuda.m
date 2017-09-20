@@ -16,10 +16,8 @@ function varargout = run_cuda(fname, onames, expdata)
     for i = 1:n
         fpath = sprintf('externaltools\\%s',onames{i});
         if exist(fpath, 'file')
-            fid = fopen(fpath, 'r');
-            varargout{i} = textscan(fid, '%f', 'delimiter', '\n');
-            varargout{i} = varargout{i}{1};
-            varargout{i} = varargout{i}';
+            fid = fopen(fpath, 'rb');
+            varargout{i} = fread(fid, inf, 'real*4');
             fclose(fid);
             delete(fpath);
         else

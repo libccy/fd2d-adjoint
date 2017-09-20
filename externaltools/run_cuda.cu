@@ -24,9 +24,17 @@ typedef struct{
 
     int sfe;
     int model_type;
+    int wave_propagation_type;
+    int simulation_mode;
     int use_given_model;
     int use_given_stf;
     float source_amplitude;
+
+    int absorb_left;
+    int absorb_right;
+    int absorb_top;
+    int absorb_bottom;
+    float absorb_width;
 
     int nsrc;
     int nrec;
@@ -55,6 +63,28 @@ typedef struct{
     float **lambda;
     float **mu;
     float **rho;
+
+    float **ux;
+    float **uy;
+    float **uz;
+    float **vx;
+    float **vy;
+    float **vz;
+
+    float **sxx;
+    float **sxy;
+    float **sxz;
+    float **szy;
+    float **szz;
+
+    float **ux_forward;
+    float **uy_forward;
+    float **uz_forward;
+    float **vx_forward;
+    float **vy_forward;
+    float **vz_forward;
+
+    float **absbound;
 } fdat;
 
 namespace mat{
@@ -171,6 +201,26 @@ namespace mat{
         cudaMemcpy(phd_a, pd_a , sizeof(float *), cudaMemcpyDeviceToHost);
         cudaMemcpy(*pa, *phd_a , m * n * sizeof(float), cudaMemcpyDeviceToHost);
     }
+
+    float *read(int len, char *fname){
+        float *data = (float *)malloc(len * sizeof(float));
+        mat::read(data, len, fname);
+        return data;
+    }
+    void read(float *data, int len, char *fname){
+        char buffer[50] = "externaltools/";
+        strcat(buffer, fname);
+        FILE *file = fopen(buffer, "rb");
+        fwrite(data, sizeof(float), len, file);
+        fclose(file);
+    }
+    void write(float *data, int len, char *fname){
+        char buffer[50] = "externaltools/";
+        strcat(buffer, fname);
+        FILE *file = fopen(buffer, "wb");
+        fwrite(data, sizeof(float), len, file);
+        fclose(file);
+    }
 }
 
 fdat *importData(void){
@@ -222,6 +272,80 @@ fdat *importData(void){
             dat->f_min = mat::createHost(dat->nsrc);
             dat->f_max = mat::createHost(dat->nsrc);
 
+            int nx = dat->nx;
+            int nz = dat->nz;
+            int nsfe = (int)(dat->nt / dat->sfe);
+            const char* wave_propagation_type = root["wave_propagation_type"].as<char*>();
+            if(strcmp(wave_propagation_type,"PSV") == 0){
+                dat->wave_propagation_type = 0;
+                dat->vx = mat::createHost(nx, nz);
+                dat->vz = mat::createHost(nx, nz);
+                dat->ux = mat::createHost(nx, nz);
+                dat->uz = mat::createHost(nx, nz);
+
+                dat->sxx = mat::createHost(nx, nz);
+                dat->szz = mat::createHost(nx, nz);
+                dat->sxz = mat::createHost(nx, nz);
+
+                dat->ux_forward = mat::createHost(nsfe * nx, nz);
+                dat->uz_forward = mat::createHost(nsfe * nx, nz);
+                dat->vx_forward = mat::createHost(nsfe * nx, nz);
+                dat->vz_forward = mat::createHost(nsfe * nx, nz);
+            }
+            else if(strcmp(wave_propagation_type,"SH") == 0){
+                dat->wave_propagation_type = 1;
+                dat->vy = mat::createHost(nx, nz);
+                dat->uy = mat::createHost(nx, nz);
+
+                dat->szy = mat::createHost(nx, nz);
+
+                dat->uy_forward = mat::createHost(nsfe * nx, nz);
+                dat->vy_forward = mat::createHost(nsfe * nx, nz);
+            }
+            else if(strcmp(wave_propagation_type,"both") == 0){
+                dat->wave_propagation_type = 2;
+                dat->vx = mat::createHost(nx, nz);
+                dat->vy = mat::createHost(nx, nz);
+                dat->vz = mat::createHost(nx, nz);
+                dat->ux = mat::createHost(nx, nz);
+                dat->uy = mat::createHost(nx, nz);
+                dat->uz = mat::createHost(nx, nz);
+
+                dat->sxy = mat::createHost(nx, nz);
+                dat->szy = mat::createHost(nx, nz);
+                dat->sxx = mat::createHost(nx, nz);
+                dat->szz = mat::createHost(nx, nz);
+                dat->sxz = mat::createHost(nx, nz);
+
+                dat->ux_forward = mat::createHost(nsfe * nx, nz);
+                dat->uy_forward = mat::createHost(nsfe * nx, nz);
+                dat->uz_forward = mat::createHost(nsfe * nx, nz);
+                dat->vx_forward = mat::createHost(nsfe * nx, nz);
+                dat->vy_forward = mat::createHost(nsfe * nx, nz);
+                dat->vz_forward = mat::createHost(nsfe * nx, nz);
+            }
+            else{
+                dat->wave_propagation_type = -1;
+            }
+
+            dat->absorb_left = root["absorb_left"];
+            dat->absorb_right = root["absorb_right"];
+            dat->absorb_top = root["absorb_top"];
+            dat->absorb_bottom = root["absorb_bottom"];
+            dat->absorb_width = root["width"];
+            dat->absbound = mat::createHost(nx, nz, 1);
+
+            const char* simulation_mode = root["simulation_mode"].as<char*>();
+            if(strcmp(simulation_mode,"forward") == 0){
+                dat->simulation_mode = 0;
+            }
+            else if(strcmp(simulation_mode,"adjoint") == 0){
+                dat->simulation_mode = 1;
+            }
+            else{
+                dat->simulation_mode = -1;
+            }
+
             for(int i = 0; i < dat->nsrc; i++){
                 JsonObject& src = single_src?root["src_info"]:((JsonArray&)root["src_info"]).get<JsonObject>(i);
                 dat->src_x[i] = src["loc_x"];
@@ -247,10 +371,9 @@ fdat *importData(void){
                 else if(strcmp(stf_type,"heaviside_bp") == 0){
                     dat->stf_type[i] = 3;
                 }
-                else if(strcmp(stf_type,"delta") == 0){
+                else{
                     dat->stf_type[i] = -1;
                 }
-                printf("%s %d\n",stf_type, dat->stf_type[i]);
             }
 
             int single_rec = root["rec_x"].is<float>();
@@ -267,39 +390,8 @@ fdat *importData(void){
     }
     return dat;
 }
-float *importData(char *path, int *len){
-    char fpath[50] = "externaltools/";
-    strcat(fpath, path);
-    *len = 0;
-    float *data = 0;
-    FILE *datafile = fopen(fpath,"r");
-    if(datafile){
-        while(!feof(datafile)){
-            float datavalue;
-            fscanf(datafile, "%f\n", &datavalue);
-            *len = *len + 1;
-        }
-        fclose(datafile);
-
-        datafile = fopen(fpath,"r");
-        data = mat::createHost(*len);
-        for(int i=0; i<*len; i++){
-            fscanf(datafile, "%f\n", data + i);
-        }
-        fclose(datafile);
-    }
-    return data;
-}
-void exportData(float *data, int len, char *fname){
-    char buffer[50] = "externaltools/";
-    strcat(buffer, fname);
-    FILE *file = fopen(buffer, "w");
-    for(int i = 0; i < len; i++){
-        fprintf(file, "%f\n", data[i]);
-    }
-    fclose(file);
-}
-void defineComputationalDomain(fdat *dat){
+void defineComputationalDomain(fdat *dat){\
+    // remove this: modify later
     dat->dx = dat->Lx / (dat->nx - 1);
     dat->dz = dat->Lz / (dat->nz - 1);
 }
@@ -374,8 +466,96 @@ void computeIndices(int *coord_n_id, float *coord_n, float Ln, float n, int nthi
         coord_n_id[i] = (int)(coord_n[i] / Ln * (n - 1) + 0.5);
     }
 }
-void runWaveFieldPropagation(void){
+void initialiseDynamicFields(fdat *dat){
+    int nx = dat->nx;
+    int nz = dat->nz;
+    int nsfe = (int)(dat->nt / dat->sfe);
+    switch(dat->wave_propagation_type){
+        case 0:{
+            mat::init(dat->vx, nx, nz, 0);
+            mat::init(dat->vz, nx, nz, 0);
+            mat::init(dat->ux, nx, nz, 0);
+            mat::init(dat->uz, nx, nz, 0);
 
+            mat::init(dat->sxx, nx, nz, 0);
+            mat::init(dat->szz, nx, nz, 0);
+            mat::init(dat->sxz, nx, nz, 0);
+
+            mat::init(dat->vx_forward, nsfe * nx, nz, 0);
+            mat::init(dat->vz_forward, nsfe * nx, nz, 0);
+            break;
+        }
+        case 1:{
+            mat::init(dat->vy, nx, nz, 0);
+            mat::init(dat->uy, nx, nz, 0);
+
+            mat::init(dat->sxy, nx, nz, 0);
+            mat::init(dat->szy, nx, nz, 0);
+
+            mat::init(dat->vy_forward, nsfe * nx, nz, 0);
+            break;
+        }
+        case 2:{
+            mat::init(dat->vx, nx, nz, 0);
+            mat::init(dat->vy, nx, nz, 0);
+            mat::init(dat->vz, nx, nz, 0);
+            mat::init(dat->ux, nx, nz, 0);
+            mat::init(dat->uy, nx, nz, 0);
+            mat::init(dat->uz, nx, nz, 0);
+
+            mat::init(dat->sxy, nx, nz, 0);
+            mat::init(dat->szy, nx, nz, 0);
+            mat::init(dat->sxx, nx, nz, 0);
+            mat::init(dat->szz, nx, nz, 0);
+            mat::init(dat->sxz, nx, nz, 0);
+
+            mat::init(dat->vx_forward, nsfe * nx, nz, 0);
+            mat::init(dat->vy_forward, nsfe * nx, nz, 0);
+            mat::init(dat->vz_forward, nsfe * nx, nz, 0);
+            break;
+        }
+    }
+    // initialise kernels: modify later
+}
+void initialiseAbsorbingBoundaries(fdat *dat){
+    float width = dat->absorb_width;
+    for(int i = 0; i < dat->nx; i++){
+        for(int j = 0; j < dat->nz; j++){
+            float X = i * dat->dx;
+            float Z = j * dat->dz;
+            if(dat->absorb_left){
+                if(X < width){
+                    dat->absbound[i][j] *= exp(-pow((X - width) / (2 * width), 2));
+                }
+            }
+            if(dat->absorb_right){
+                if(X > dat->Lx - width){
+                    dat->absbound[i][j] *= exp(-pow((X - (dat->Lx - width)) / (2 * width), 2));
+                }
+            }
+            if(dat->absorb_bottom){
+                if(Z < width){
+                    dat->absbound[i][j] *= exp(-pow((Z - width) / (2 * width), 2));
+                }
+            }
+            if(dat->absorb_top){
+                if(Z > dat->Lz - width){
+                    dat->absbound[i][j] *= exp(-pow((Z - (dat->Lz - width)) / (2 * width), 2));
+                }
+            }
+        }
+    }
+}
+void runWaveFieldPropagation(fdat *dat){
+    initialiseDynamicFields(dat);
+    initialiseAbsorbingBoundaries(dat);
+    printf("iterating...\n");
+
+    for(int n = 0; n < nt; n++){
+        if((n+1)%sfe == 0){
+            
+        }
+    }
 }
 void checkArgs(fdat *dat){
     defineComputationalDomain(dat);
@@ -405,14 +585,14 @@ void checkArgs(fdat *dat){
     for(int i = 0; i < dat->nt; i++){
         t[i] = i * dat->dt;
     }
-    exportData(t, dat->nt, "t");
+    mat::write(t, dat->nt, "t");
 }
 void runForward(void){
     fdat *dat = importData();
     checkArgs(dat);
-    exportData(dat->stf_z[0],dat->nt,"stf_z"); // modify later
-    // next: run_wavefield_propagation
+    runWaveFieldPropagation(dat);
 
+    mat::write(dat->stf_z[0],dat->nt,"stf_z"); // modify later
 }
 
 int main(int argc , char *argv[]){
