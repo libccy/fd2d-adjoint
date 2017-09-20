@@ -23,8 +23,9 @@ typedef struct{
     float Lz;
 
     int sfe;
-    int update_params;
     int model_type;
+    int use_given_model;
+    int use_given_stf;
     float source_amplitude;
 
     int nsrc;
@@ -42,10 +43,10 @@ typedef struct{
     float *rec_x;
     float *rec_z;
 
-    int **src_x_id;
-    int **src_z_id;
-    int **rec_x_id;
-    int **rec_z_id;
+    int *src_x_id;
+    int *src_z_id;
+    int *rec_x_id;
+    int *rec_z_id;
 
     float **stf_x;
     float **stf_y;
@@ -201,8 +202,11 @@ fdat *importData(void){
             dat->dt = root["dt"];
             dat->Lx = root["Lx"];
             dat->Lz = root["Lz"];
+
             dat->sfe = root["sfe"];
             dat->model_type = root["model_type"];
+            dat->use_given_model = root["use_given_model"];
+            dat->use_given_stf = root["use_given_stf"];
             dat->source_amplitude = root["source_amplitude"];
 
             int single_src = root["src_info"].is<JsonObject>();
@@ -222,7 +226,6 @@ fdat *importData(void){
                 JsonObject& src = single_src?root["src_info"]:((JsonArray&)root["src_info"]).get<JsonObject>(i);
                 dat->src_x[i] = src["loc_x"];
                 dat->src_z[i] = src["loc_z"];
-                dat->stf_type[i] = 2; // ricker: modify later
                 dat->stf_PSV_x[i] = src["stf_PSV"][0];
                 dat->stf_PSV_z[i] = src["stf_PSV"][1];
                 dat->tauw_0[i] = src["tauw_0"];
@@ -230,6 +233,24 @@ fdat *importData(void){
                 dat->tee_0[i] = src["tee_0"];
                 dat->f_min[i] = src["f_min"];
                 dat->f_max[i] = src["f_max"];
+
+                const char* stf_type = src["stf_type"].as<char*>();
+                if(strcmp(stf_type,"delta") == 0){
+                    dat->stf_type[i] = 0;
+                }
+                else if(strcmp(stf_type,"delta_bp") == 0){
+                    dat->stf_type[i] = 1;
+                }
+                else if(strcmp(stf_type,"ricker") == 0){
+                    dat->stf_type[i] = 2;
+                }
+                else if(strcmp(stf_type,"heaviside_bp") == 0){
+                    dat->stf_type[i] = 3;
+                }
+                else if(strcmp(stf_type,"delta") == 0){
+                    dat->stf_type[i] = -1;
+                }
+                printf("%s %d\n",stf_type, dat->stf_type[i]);
             }
 
             int single_rec = root["rec_x"].is<float>();
@@ -241,8 +262,6 @@ fdat *importData(void){
                 dat->rec_x[i] = single_rec?root["rec_x"]:((JsonArray&)root["rec_x"]).get<float>(i);
                 dat->rec_z[i] = single_rec?root["rec_z"]:((JsonArray&)root["rec_z"]).get<float>(i);
             }
-
-            printf("rec %f %f %f %f\n",dat->src_x[0],dat->src_z[0],dat->rec_x[0],dat->rec_z[0]);
         }
         jsonBuffer.clear();
     }
@@ -315,7 +334,6 @@ void prepareSTF(fdat *dat){
     for(int i = 0; i < nt; i++){
         t[i] = i * dat->dt;
     }
-
     dat->stf_x = mat::createHost(dat->nsrc, nt);
     dat->stf_y = mat::createHost(dat->nsrc, nt);
     dat->stf_z = mat::createHost(dat->nsrc, nt);
@@ -332,25 +350,8 @@ void prepareSTF(fdat *dat){
         }
     }
 }
-void checkArgs(fdat *dat){
-    // int len;
-    // add input file option: modify later
-    // if update_params == 1  defineMaterialParameters here
-    // float *stfall = importData("stf", &len);
-    // if(len > 0){
-    //     stf.stf_x = stfall;
-    //     return stf;
-    // }
-    dat->update_params = 0;
-    float *t = mat::createHost(dat->nt);
-    for(int i = 0; i < dat->nt; i++){
-        t[i] = i * dat->dt;
-    }
-    exportData(t, dat->nt, "t");
-    prepareSTF(dat);
-}
 void defineMaterialParameters(fdat *dat){
-    // more model_type: modify later
+    // other model_type: modify later
     int nx = dat->nx;
     int nz = dat->nz;
     switch(dat->model_type){
@@ -368,18 +369,50 @@ void defineMaterialParameters(fdat *dat){
         }
     }
 }
+void computeIndices(int *coord_n_id, float *coord_n, float Ln, float n, int nthings){
+    for(int i = 0; i < nthings;i++){
+        coord_n_id[i] = (int)(coord_n[i] / Ln * (n - 1) + 0.5);
+    }
+}
 void runWaveFieldPropagation(void){
 
 }
-void runForward(void){
-    fdat *dat = importData();
+void checkArgs(fdat *dat){
     defineComputationalDomain(dat);
-    checkArgs(dat);
-    exportData(dat->stf_z[0],dat->nt,"stf_z"); // modify later
-    if(!dat->update_params){
+    if(dat->use_given_model){
+        // GivenModel: modify later
+    }
+    else{
         defineMaterialParameters(dat);
     }
-    //next: compute_indices
+    if(dat->use_given_stf){
+        // GivenSTF: modify later
+    }
+    else{
+        prepareSTF(dat);
+    }
+
+    dat->src_x_id = mat::createIntHost(dat->nsrc);
+    dat->src_z_id = mat::createIntHost(dat->nsrc);
+    dat->rec_x_id = mat::createIntHost(dat->nrec);
+    dat->rec_z_id = mat::createIntHost(dat->nrec);
+    computeIndices(dat->src_x_id, dat->src_x, dat->Lx, dat->nx, dat->nsrc);
+    computeIndices(dat->src_z_id, dat->src_z, dat->Lz, dat->nz, dat->nsrc);
+    computeIndices(dat->rec_x_id, dat->rec_x, dat->Lx, dat->nx, dat->nrec);
+    computeIndices(dat->rec_z_id, dat->rec_z, dat->Lz, dat->nz, dat->nrec);
+
+    float *t = mat::createHost(dat->nt);
+    for(int i = 0; i < dat->nt; i++){
+        t[i] = i * dat->dt;
+    }
+    exportData(t, dat->nt, "t");
+}
+void runForward(void){
+    fdat *dat = importData();
+    checkArgs(dat);
+    exportData(dat->stf_z[0],dat->nt,"stf_z"); // modify later
+    // next: run_wavefield_propagation
+
 }
 
 int main(int argc , char *argv[]){
