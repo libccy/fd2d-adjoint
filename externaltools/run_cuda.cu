@@ -9,8 +9,8 @@ int i = blockIdx.x % dimx; \
 int j = threadIdx.x + (blockIdx.x - i) / dimx * dimy / d_nbt;
 
 const float pi = 3.1415927;
-const int nbt = 8;
-__constant__ int d_nbt = 8;
+const int nbt = 1;
+__constant__ int d_nbt = 1;
 
 typedef struct{
     int nx;
@@ -88,13 +88,13 @@ typedef struct{
 } fdat;
 
 namespace mat{
-    __global__ void _setValue(float **mat, const float init, const int m, const int n){
-        devij(m, n);
-        mat[i][j] = init;
-    }
     __global__ void _setValue(float *mat, const float init, const int m){
         int i = threadIdx.x;
         mat[i] = init;
+    }
+    __global__ void _setValue(float **mat, const float init, const int m, const int n){
+        devij(m, n);
+        mat[i][j] = init;
     }
     __global__ void _setPointerValue(float **mat, float *data, const int n){
         int i = threadIdx.x;
@@ -137,9 +137,6 @@ namespace mat{
         mat::_setPointerValue<<<1, m>>>(mat, data, n);
     	return mat;
     }
-    float **create(const int m, const int n, const float init){
-        return mat::init(mat::create(m, n), m, n, init);
-    }
     float *createHost(const int m) {
     	return (float *)malloc(m * sizeof(float));
     }
@@ -150,9 +147,6 @@ namespace mat{
     		mat[i] = data + n * i;
     	}
     	return mat;
-    }
-    float **createHost(const int m, const int n, const float init){
-        return mat::initHost(mat::createHost(m, n), m, n, init);
     }
     int *createInt(const int m){
         int *a;
@@ -311,7 +305,11 @@ fdat *importData(void){
             dat->absorb_top = root["absorb_top"];
             dat->absorb_bottom = root["absorb_bottom"];
             dat->absorb_width = root["width"];
-            dat->absbound = mat::createHost(nx, nz, 1);
+            dat->absbound = mat::createHost(nx, nz);
+
+            dat->lambda = mat::createHost(nx, nz);
+            dat->rho = mat::createHost(nx, nz);
+            dat->mu = mat::createHost(nx, nz);
 
             const char* simulation_mode = root["simulation_mode"].as<char*>();
             if(strcmp(simulation_mode,"forward") == 0){
@@ -426,15 +424,15 @@ void defineMaterialParameters(fdat *dat){
     int nz = dat->nz;
     switch(dat->model_type){
         case 1:{
-            dat->rho = mat::createHost(nx, nz, 3000);
-            dat->mu = mat::createHost(nx, nz, 4.8e10);
-            dat->lambda = mat::createHost(nx, nz, 4.8e10);
+            mat::initHost(dat->rho, nx, nz, 3000);
+            mat::initHost(dat->mu, nx, nz, 4.8e10);
+            mat::initHost(dat->lambda, nx, nz, 4.8e10);
             break;
         }
         case 10:{
-            dat->rho = mat::createHost(nx, nz, 2600);
-            dat->mu = mat::createHost(nx, nz, 2.66e10);
-            dat->lambda = mat::createHost(nx, nz, 3.42e10);
+            mat::initHost(dat->rho, nx, nz, 2600);
+            mat::initHost(dat->mu, nx, nz, 2.66e10);
+            mat::initHost(dat->lambda, nx, nz, 3.42e10);
             break;
         }
     }
@@ -496,6 +494,7 @@ void initialiseDynamicFields(fdat *dat){
     // initialise kernels: modify later
 }
 void initialiseAbsorbingBoundaries(fdat *dat){
+    mat::initHost(dat->absbound, dat->nx, dat->nz, 1);
     float width = dat->absorb_width;
     for(int i = 0; i < dat->nx; i++){
         for(int j = 0; j < dat->nz; j++){
@@ -523,6 +522,13 @@ void initialiseAbsorbingBoundaries(fdat *dat){
             }
         }
     }
+    // modify later
+    int nz=dat->nz;
+    float *abs=mat::createHost(nz);
+    for(int i=0;i<nz;i++){
+        abs[i]=dat->absbound[i][i];
+    }
+    mat::write(abs,nz,"abs");
 }
 void runWaveFieldPropagation(fdat *dat){
     initialiseDynamicFields(dat);
@@ -573,12 +579,43 @@ void runForward(void){
     mat::write(dat->stf_z[0],dat->nt,"stf_z"); // modify later
 }
 
-int main(int argc , char *argv[]){
-    for(int i = 0; i< argc; i++){
-        if(strcmp(argv[i],"runForward") == 0){
-            runForward();
+__global__ void add(float **a,float **b,float **c){
+    devij(3,3);
+    c[i][j]=a[i][j]+b[i][j];
+}
+void print(float **a,int m, int n){
+    for(int i=0;i<m;i++){
+        for(int j=0;j<n;j++){
+            printf("%f ",a[i][j]);
         }
+        printf("\n");
     }
+}
+void print(float ***a,int p,int m, int n){
+    for(int k=0;k<p;k++){
+        print(a[k],m,n);
+        printf("\n");
+        printf("\n");
+    }
+
+}
+int main(int argc , char *argv[]){
+    // for(int i = 0; i< argc; i++){
+    //     if(strcmp(argv[i],"runForward") == 0){
+    //         runForward();
+    //     }
+    // }
+    float **a=mat::init(mat::create(3,3),3,3,1);
+    float **b=mat::init(mat::create(3,3),3,3,6);
+    float **c=mat::create(3,3);
+    add<<<3,3>>>(a,b,c);
+    float **d=mat::createHost(3,3);
+    mat::copyDeviceToHost(d,c,3,3);
+    print(d,3,3);
+    // float ***a=mat::createHost(3,3,3);
+    // mat::initHost(a,3,3,3,4.7);
+    // print(a,3,3,3);
+
 
     return 0;
 }
