@@ -384,6 +384,7 @@ void copyMat(float **a, float **b, int nx, int nz){
         }
     }
 }
+
 void makeSourceTimeFunction(fdat *dat, float *stf, int index){
     float max = 0;
     float alfa = 2 * dat->tauw_0[index] / dat->tauw[index];
@@ -520,14 +521,17 @@ void runWaveFieldPropagation(fdat *dat){
     int sh = dat->wave_propagation_sh;
     int psv = dat->wave_propagation_psv;
     int nsfe = (int)(dat->nt / dat->sfe);
+    int nx = dat->nx;
+    int nz = dat->nz;
     for(int n = 0; n < dat->nt; n++){
         if((n + 1) % dat->sfe == 0){
+            int isfe = nsfe - (n + 1) / dat->sfe;
             if(sh){
-                copyMat(dat->uy_forward[nsfe - n / dat->sfe], dat->uy, dat->nx, dat->nz);
+                copyMat(dat->uy_forward[isfe], dat->uy, nx, nz);
             }
             if(psv){
-                copyMat(dat->ux_forward[nsfe - n / dat->sfe], dat->ux, dat->nx, dat->nz);
-                copyMat(dat->uz_forward[nsfe - n / dat->sfe], dat->uz, dat->nx, dat->nz);
+                copyMat(dat->ux_forward[isfe], dat->ux, nx, nz);
+                copyMat(dat->uz_forward[isfe], dat->uz, nx, nz);
             }
         }
     }

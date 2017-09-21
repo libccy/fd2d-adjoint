@@ -14,7 +14,13 @@ function [] = compile_cuda(fname, rmlink)
     delete('externaltools\\compile_cuda.bat');
 
     if rmlink
-        delete(sprintf('externaltools\\%s.exp',fname));
-        delete(sprintf('externaltools\\%s.lib',fname));
+        expname = sprintf('externaltools\\%s.exp',fname);
+        libname = sprintf('externaltools\\%s.lib',fname);
+        if exist(expname, 'file')
+            delete(expname);
+        end
+        if exist(libname, 'file')
+            delete(libname);
+        end
     end
 end

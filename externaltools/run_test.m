@@ -3,12 +3,12 @@ tic;
 [stf_z, t, abs] = run_cuda('runForward',{'stf_z', 't','abs'});
 toc;
 
-subplot(2,1,1)
-plot(t, stf_z);
-xlabel('vx')
-subplot(2,1,2)
-plot(1:length(abs),abs);
-xlabel('vz')
+% subplot(2,1,1)
+% plot(t, stf_z);
+% xlabel('vx')
+% subplot(2,1,2)
+% plot(1:length(abs),abs);
+% xlabel('vz')
 
 % stf = prepare_stf;
 % stf = {stf.stf};
