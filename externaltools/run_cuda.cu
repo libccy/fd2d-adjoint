@@ -23,6 +23,7 @@ typedef struct{
     float Lz;
 
     int sfe;
+    int order;
     int model_type;
     int wave_propagation_sh;
     int wave_propagation_psv;
@@ -64,6 +65,7 @@ typedef struct{
     float **lambda;
     float **mu;
     float **rho;
+    float **absbound;
 
     float **ux;
     float **uy;
@@ -78,14 +80,16 @@ typedef struct{
     float **szy;
     float **szz;
 
+    float **dsx;
+    float **dsy;
+    float **dsz;
+
     float ***ux_forward;
     float ***uy_forward;
     float ***uz_forward;
     float ***vx_forward;
     float ***vy_forward;
     float ***vz_forward;
-
-    float **absbound;
 } fdat;
 
 namespace mat{
@@ -248,6 +252,40 @@ namespace mat{
     }
 }
 
+
+void printMat(float **a, int m, int n){
+    for(int i=2;i<m-2;i++){
+        for(int j=2;j<n-2;j++){
+            printf("%f ", a[i][j]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+void copyMat(float **a, float **b, int nx, int nz){
+    // replace with copyDeviceToHost: later
+    for(int i = 0; i < nx; i++){
+        for(int j = 0; j < nz; j++){
+            a[i][j] = b[i][j];
+        }
+    }
+}
+
+void divSY(float **out, float **sxy, float **szy, float dx, float dz, int nx, int nz, int order){
+    // order = 2: later
+    for(int i = 2; i < nx - 2; i++){
+        for(int j = 0; j < nz; j++){
+            out[i][j] = 9*(sxy[i][j]-sxy[i-1][j])/(8*dx)-(sxy[i+1][j]-sxy[i-2][j])/(24*dx);
+        }
+    }
+    for(int i = 0; i < nx; i++){
+        for(int j = 2; j < nz - 2; j++){
+            out[i][j] += 9*(szy[i][j]-szy[i][j-1])/(8*dz)-(szy[i][j+1]-szy[i][j-2])/(24*dz);
+        }
+    }
+}
+
+
 fdat *importData(void){
     fdat *dat = new fdat;
     FILE *datfile = fopen("externaltools/config","r");
@@ -283,6 +321,7 @@ fdat *importData(void){
             dat->use_given_model = root["use_given_model"];
             dat->use_given_stf = root["use_given_stf"];
             dat->source_amplitude = root["source_amplitude"];
+            dat->order = root["order"];
 
             int single_src = root["src_info"].is<JsonObject>();
             dat->nsrc = single_src?1:root["src_info"].size();
@@ -375,16 +414,6 @@ fdat *importData(void){
     }
     return dat;
 }
-
-void copyMat(float **a, float **b, int nx, int nz){
-    // replace with copyDeviceToHost: later
-    for(int i = 0; i < nx; i++){
-        for(int j = 0; j < nz; j++){
-            a[i][j] = b[i][j];
-        }
-    }
-}
-
 void makeSourceTimeFunction(fdat *dat, float *stf, int index){
     float max = 0;
     float alfa = 2 * dat->tauw_0[index] / dat->tauw[index];
@@ -520,12 +549,14 @@ void runWaveFieldPropagation(fdat *dat){
 
     int sh = dat->wave_propagation_sh;
     int psv = dat->wave_propagation_psv;
-    int nsfe = (int)(dat->nt / dat->sfe);
     int nx = dat->nx;
     int nz = dat->nz;
+    int dx = dat->dx;
+    int dz = dat->dz;
+
     for(int n = 0; n < dat->nt; n++){
         if((n + 1) % dat->sfe == 0){
-            int isfe = nsfe - (n + 1) / dat->sfe;
+            int isfe = (int)(dat->nt / dat->sfe) - (n + 1) / dat->sfe;
             if(sh){
                 copyMat(dat->uy_forward[isfe], dat->uy, nx, nz);
             }
@@ -535,7 +566,9 @@ void runWaveFieldPropagation(fdat *dat){
             }
         }
     }
-    // next: dsy dsx dsz copyMat
+    if(sh){
+        divSY(dat->dsy, dat->sxy, dat->szy, dx, dz, nx, nz, dat->order);
+    }
 }
 void checkArgs(fdat *dat){
     int nx = dat->nx;
@@ -549,6 +582,7 @@ void checkArgs(fdat *dat){
         dat->vy = mat::createHost(nx, nz);
         dat->uy = mat::createHost(nx, nz);
         dat->szy = mat::createHost(nx, nz);
+        dat->dsy = mat::createHost(nx, nz);
         dat->uy_forward = mat::createHost(nsfe, nx, nz);
         dat->vy_forward = mat::createHost(nsfe, nx, nz);
     }
@@ -560,6 +594,8 @@ void checkArgs(fdat *dat){
         dat->sxx = mat::createHost(nx, nz);
         dat->szz = mat::createHost(nx, nz);
         dat->sxz = mat::createHost(nx, nz);
+        dat->dsx = mat::createHost(nx, nz);
+        dat->dsz = mat::createHost(nx, nz);
         dat->ux_forward = mat::createHost(nsfe, nx, nz);
         dat->uz_forward = mat::createHost(nsfe, nx, nz);
         dat->vx_forward = mat::createHost(nsfe, nx, nz);
@@ -610,9 +646,21 @@ void runForward(void){
 int main(int argc , char *argv[]){
     for(int i = 0; i< argc; i++){
         if(strcmp(argv[i],"runForward") == 0){
-            runForward();
+            // runForward();
         }
     }
+    float **a=mat::createHost(8,8);
+    float **b=mat::createHost(8,8);
+    float **c=mat::createHost(8,8);
+    mat::initHost(c,8,8,0);
+    for(int i=0;i<8;i++){
+        for(int j=0;j<8;j++){
+            a[i][j]=(i+5)*(j+7)-(float)(i+2)/(j+6);
+            b[i][j]=(i+1)*(j+9)+(float)(i+3)/(j+4);
+        }
+    }
+    divSY(c, a, b, 1, 1, 8, 8, 4);
+    printMat(c,8,8);
 
     return 0;
 }

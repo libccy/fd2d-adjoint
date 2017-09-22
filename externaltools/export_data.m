@@ -20,6 +20,7 @@ function [] = export_data(key, value)
         data.use_given_model = 0;
         data.use_given_stf = 0;
         data.model_type = model_type;
+        data.order = order;
         
         data.sfe = store_fw_every;
         data.src_info = src_info;

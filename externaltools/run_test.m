@@ -3,6 +3,21 @@ tic;
 [stf_z, t, abs] = run_cuda('runForward',{'stf_z', 't','abs'});
 toc;
 
+a=zeros(8,8);
+b=zeros(8,8);
+for i=1:8
+    for j=1:8
+        a(i,j)=(i+4)*(j+6)-(i+1)/(j+5);
+        b(i,j)=(i+0)*(j+8)+(i+2)/(j+3);
+    end
+end
+c=div_s(a,b,1,1,8,8,4);
+o=c;
+disp(o(3,3:6));
+disp(o(4,3:6));
+disp(o(5,3:6));
+disp(o(6,3:6));
+
 % subplot(2,1,1)
 % plot(t, stf_z);
 % xlabel('vx')
