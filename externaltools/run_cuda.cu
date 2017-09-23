@@ -284,7 +284,28 @@ void divSY(float **out, float **sxy, float **szy, float dx, float dz, int nx, in
         }
     }
 }
-
+void divSXZ(float **outx, float **outz, float **sxx, float **szz, float **sxz, float dx, float dz, int nx, int nz, int order){
+    // order = 2: later
+    for(int i = 2; i < nx - 2; i++){
+        for(int j = 0; j < nz; j++){
+            outx[i][j] = 9*(sxx[i][j]-sxx[i-1][j])/(8*dx)-(sxx[i+1][j]-sxx[i-2][j])/(24*dx);
+            outz[i][j] = 9*(sxz[i][j]-sxz[i-1][j])/(8*dx)-(sxz[i+1][j]-sxz[i-2][j])/(24*dx);
+        }
+    }
+    for(int i = 0; i < nx; i++){
+        for(int j = 2; j < nz - 2; j++){
+            outx[i][j] += 9*(sxz[i][j]-sxz[i][j-1])/(8*dz)-(sxz[i][j+1]-sxz[i][j-2])/(24*dz);
+            outz[i][j] += 9*(szz[i][j]-szz[i][j-1])/(8*dz)-(szz[i][j+1]-szz[i][j-2])/(24*dz);
+        }
+    }
+}
+void updateV(float **v, float **ds, float **rho, float **absbound, float dt, int nx, int nz){
+    for(int i = 0; i < nx; i++){
+        for(int j = 0; j < nz; j++){
+            v[i][j] = absbound[i][j] * (v[i][j] + dt * ds[i][j] / rho[i][j]);
+        }
+    }
+}
 
 fdat *importData(void){
     fdat *dat = new fdat;
@@ -568,7 +589,15 @@ void runWaveFieldPropagation(fdat *dat){
     }
     if(sh){
         divSY(dat->dsy, dat->sxy, dat->szy, dx, dz, nx, nz, dat->order);
+        updateV(dat->vy, dat->dsy, dat->rho, dat->absbound, dat->dt, nx, nz);
     }
+    if(psv){
+        divSXZ(dat->dsx, dat->dsz, dat->sxx, dat->szz, dat->sxz, dx, dz, nx, nz, dat->order);
+        updateV(dat->vx, dat->dsx, dat->rho, dat->absbound, dat->dt, nx, nz);
+        updateV(dat->vz, dat->dsz, dat->rho, dat->absbound, dat->dt, nx, nz);
+    }
+
+    //next: dvydx dvydz malloc
 }
 void checkArgs(fdat *dat){
     int nx = dat->nx;
@@ -646,21 +675,25 @@ void runForward(void){
 int main(int argc , char *argv[]){
     for(int i = 0; i< argc; i++){
         if(strcmp(argv[i],"runForward") == 0){
-            // runForward();
+            runForward();
         }
     }
-    float **a=mat::createHost(8,8);
-    float **b=mat::createHost(8,8);
-    float **c=mat::createHost(8,8);
-    mat::initHost(c,8,8,0);
-    for(int i=0;i<8;i++){
-        for(int j=0;j<8;j++){
-            a[i][j]=(i+5)*(j+7)-(float)(i+2)/(j+6);
-            b[i][j]=(i+1)*(j+9)+(float)(i+3)/(j+4);
-        }
-    }
-    divSY(c, a, b, 1, 1, 8, 8, 4);
-    printMat(c,8,8);
+    // float **a=mat::createHost(8,8);
+    // float **b=mat::createHost(8,8);
+    // float **e=mat::createHost(8,8);
+    // float **c=mat::createHost(8,8);
+    // float **d=mat::createHost(8,8);
+    // mat::initHost(c,8,8,0);
+    // for(int i=0;i<8;i++){
+    //     for(int j=0;j<8;j++){
+    //         a[i][j]=(i+5)*(j+7)-(float)(i+2)/(j+6);
+    //         b[i][j]=(i+1)*(j+9)+(float)(i+3)/(j+4);
+    //         e[i][j]=(i+11)*(j+19)+(float)(i+13)/(j+14);
+    //     }
+    // }
+    // divSXZ(c, d, a, e, b, 1, 1, 8, 8, 4);
+    // printMat(c,8,8);
+    // printMat(d,8,8);
 
     return 0;
 }
