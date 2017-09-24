@@ -83,6 +83,12 @@ typedef struct{
     float **dsx;
     float **dsy;
     float **dsz;
+    float **dvxdx;
+    float **dvxdz;
+    float **dvydx;
+    float **dvydz;
+    float **dvzdx;
+    float **dvzdz;
 
     float ***ux_forward;
     float ***uy_forward;
@@ -296,6 +302,32 @@ void divSXZ(float **outx, float **outz, float **sxx, float **szz, float **sxz, f
         for(int j = 2; j < nz - 2; j++){
             outx[i][j] += 9*(sxz[i][j]-sxz[i][j-1])/(8*dz)-(sxz[i][j+1]-sxz[i][j-2])/(24*dz);
             outz[i][j] += 9*(szz[i][j]-szz[i][j-1])/(8*dz)-(szz[i][j+1]-szz[i][j-2])/(24*dz);
+        }
+    }
+}
+void divVY(float **outx, float **outz, float **vy, float dx, float dz, int nx, int nz, int order){
+    for(int i = 1; i < nx - 2; i++){
+        for(int j = 0; j < nz; j++){
+            outx[i][j] = 9*(vy[i+1][j]-vy[i][j])/(8*dx)-(vy[i+2][j]-vy[i-1][j])/(24*dx);
+        }
+    }
+    for(int i = 0; i < nx; i++){
+        for(int j = 1; j < nz - 2; j++){
+            outz[i][j] = 9*(vy[i][j+1]-vy[i][j])/(8*dz)-(vy[i][j+2]-vy[i][j-1])/(24*dz);
+        }
+    }
+}
+void divVXZ(float **outxx, float **outxz, float **outzx, float **outzz, float **vx, float **vz, float dx, float dz, int nx, int nz, int order){
+    for(int i = 1; i < nx - 2; i++){
+        for(int j = 0; j < nz; j++){
+            outxx[i][j] = 9*(vx[i+1][j]-vx[i][j])/(8*dx)-(vx[i+2][j]-vx[i-1][j])/(24*dx);
+            outzx[i][j] = 9*(vz[i+1][j]-vz[i][j])/(8*dx)-(vz[i+2][j]-vz[i-1][j])/(24*dx);
+        }
+    }
+    for(int i = 0; i < nx; i++){
+        for(int j = 1; j < nz - 2; j++){
+            outxz[i][j] = 9*(vx[i][j+1]-vx[i][j])/(8*dz)-(vx[i][j+2]-vx[i][j-1])/(24*dz);
+            outzz[i][j] = 9*(vz[i][j+1]-vz[i][j])/(8*dz)-(vz[i][j+2]-vz[i][j-1])/(24*dz);
         }
     }
 }
@@ -675,25 +707,28 @@ void runForward(void){
 int main(int argc , char *argv[]){
     for(int i = 0; i< argc; i++){
         if(strcmp(argv[i],"runForward") == 0){
-            runForward();
+            // runForward();
         }
     }
-    // float **a=mat::createHost(8,8);
-    // float **b=mat::createHost(8,8);
-    // float **e=mat::createHost(8,8);
-    // float **c=mat::createHost(8,8);
-    // float **d=mat::createHost(8,8);
-    // mat::initHost(c,8,8,0);
-    // for(int i=0;i<8;i++){
-    //     for(int j=0;j<8;j++){
-    //         a[i][j]=(i+5)*(j+7)-(float)(i+2)/(j+6);
-    //         b[i][j]=(i+1)*(j+9)+(float)(i+3)/(j+4);
-    //         e[i][j]=(i+11)*(j+19)+(float)(i+13)/(j+14);
-    //     }
-    // }
-    // divSXZ(c, d, a, e, b, 1, 1, 8, 8, 4);
-    // printMat(c,8,8);
-    // printMat(d,8,8);
+    float **a=mat::createHost(8,8);
+    float **b=mat::createHost(8,8);
+    float **e=mat::createHost(8,8);
+    float **c=mat::createHost(8,8);
+    float **d=mat::createHost(8,8);
+    float **cc=mat::createHost(8,8);
+    float **dd=mat::createHost(8,8);
+
+    mat::initHost(c,8,8,0);
+    for(int i=0;i<8;i++){
+        for(int j=0;j<8;j++){
+            a[i][j]=(i+5)*(j+7)-(float)(i+2)/(j+6);
+            b[i][j]=(i+1)*(j+9)+(float)(i+3)/(j+4);
+            e[i][j]=(i+11)*(j+19)+(float)(i+13)/(j+14);
+        }
+    }
+    divVXZ(c, d,cc,dd, b,a, 1, 1, 8, 8, 4);
+    printMat(cc,8,8);
+    printMat(dd,8,8);
 
     return 0;
 }
