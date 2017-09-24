@@ -338,6 +338,23 @@ void updateV(float **v, float **ds, float **rho, float **absbound, float dt, int
         }
     }
 }
+void updateSY(float **sxy, float **szy, float **dvydx, float **dvydz, float **mu, float dt, int nx, int nz){
+    for(int i = 0; i < nx; i++){
+        for(int j = 0; j < nz; j++){
+            sxy[i][j] += dt * mu[i][j] + dvydx[i][j];
+            szy[i][j] += dt * mu[i][j] + dvydz[i][j];
+        }
+    }
+}
+void updateSXZ(float **sxx, float **szz, float **sxz, float **dvxdx, float **dvxdz, float **dvzdx, float **dvzdz, float **lambda, float **mu, float dt, int nx, int nz){
+    for(int i = 0; i < nx; i++){
+        for(int j = 0; j < nz; j++){
+            sxx[i][j] += dt * ((lambda[i][j] + 2 * mu[i][j]) * dvxdx[i][j] + lambda[i][j] * dvzdz[i][j]);
+            szz[i][j] += dt * ((lambda[i][j] + 2 * mu[i][j]) * dvzdz[i][j] + lambda[i][j] * dvxdx[i][j]);
+            sxz[i][j] += dt * (mu[i][j] * (dvxdz[i][j] + dvxdz[i][j]));
+        }
+    }
+}
 
 fdat *importData(void){
     fdat *dat = new fdat;
@@ -606,6 +623,7 @@ void runWaveFieldPropagation(fdat *dat){
     int nz = dat->nz;
     int dx = dat->dx;
     int dz = dat->dz;
+    int order = dat->order;
 
     for(int n = 0; n < dat->nt; n++){
         if((n + 1) % dat->sfe == 0){
@@ -618,18 +636,39 @@ void runWaveFieldPropagation(fdat *dat){
                 copyMat(dat->uz_forward[isfe], dat->uz, nx, nz);
             }
         }
-    }
-    if(sh){
-        divSY(dat->dsy, dat->sxy, dat->szy, dx, dz, nx, nz, dat->order);
-        updateV(dat->vy, dat->dsy, dat->rho, dat->absbound, dat->dt, nx, nz);
-    }
-    if(psv){
-        divSXZ(dat->dsx, dat->dsz, dat->sxx, dat->szz, dat->sxz, dx, dz, nx, nz, dat->order);
-        updateV(dat->vx, dat->dsx, dat->rho, dat->absbound, dat->dt, nx, nz);
-        updateV(dat->vz, dat->dsz, dat->rho, dat->absbound, dat->dt, nx, nz);
-    }
 
-    //next: dvydx dvydz malloc
+        if(sh){
+            divSY(dat->dsy, dat->sxy, dat->szy, dx, dz, nx, nz, order);
+        }
+        if(psv){
+            divSXZ(dat->dsx, dat->dsz, dat->sxx, dat->szz, dat->sxz, dx, dz, nx, nz, order);
+        }
+        if(dat->simulation_mode == 0 || dat->simulation_mode == 1){
+            for(int is = 0; is < dat->nsrc; is++){
+                int xs = dat->src_x_id[is];
+                int zs = dat->src_z_id[is];
+                if(sh){
+                    dat->dsy[xs][zs] += dat->stf_y[is][n];
+                }
+                if(psv){
+                    dat->dsx[xs][zs] += dat->stf_x[is][n];
+                    dat->dsz[xs][zs] += dat->stf_z[is][n];
+                }
+            }
+        }
+        if(sh){
+            updateV(dat->vy, dat->dsy, dat->rho, dat->absbound, dat->dt, nx, nz);
+            divVY(dat->dvydx, dat->dvydz, dat->vy, dx, dz, nx, nz, dat->order);
+            updateSY(dat->sxy, dat->szy, dat->dvydx, dat->dvydz, dat->mu, dat->dt, nx, nz);
+        }
+        if(psv){
+            updateV(dat->vx, dat->dsx, dat->rho, dat->absbound, dat->dt, nx, nz);
+            updateV(dat->vz, dat->dsz, dat->rho, dat->absbound, dat->dt, nx, nz);
+            divVXZ(dat->dvxdx, dat->dvxdz, dat->dvzdx, dat->dvzdz, dat->vx, dat->vz, dx, dz, nx, nz, order);
+            updateSXZ(dat->sxx, dat->szz, dat->sxz, dat->dvxdx, dat->dvxdz, dat->dvzdx, dat->dvzdz, dat->lambda, dat->mu, dat->dt, nx, nz);
+        }
+        // next: compute displacement field
+    }
 }
 void checkArgs(fdat *dat){
     int nx = dat->nx;
@@ -644,6 +683,8 @@ void checkArgs(fdat *dat){
         dat->uy = mat::createHost(nx, nz);
         dat->szy = mat::createHost(nx, nz);
         dat->dsy = mat::createHost(nx, nz);
+        dat->dvydx = mat::createHost(nx, nz);
+        dat->dvydz = mat::createHost(nx, nz);
         dat->uy_forward = mat::createHost(nsfe, nx, nz);
         dat->vy_forward = mat::createHost(nsfe, nx, nz);
     }
@@ -657,6 +698,10 @@ void checkArgs(fdat *dat){
         dat->sxz = mat::createHost(nx, nz);
         dat->dsx = mat::createHost(nx, nz);
         dat->dsz = mat::createHost(nx, nz);
+        dat->dvxdx = mat::createHost(nx, nz);
+        dat->dvxdz = mat::createHost(nx, nz);
+        dat->dvzdx = mat::createHost(nx, nz);
+        dat->dvzdz = mat::createHost(nx, nz);
         dat->ux_forward = mat::createHost(nsfe, nx, nz);
         dat->uz_forward = mat::createHost(nsfe, nx, nz);
         dat->vx_forward = mat::createHost(nsfe, nx, nz);
@@ -707,28 +752,28 @@ void runForward(void){
 int main(int argc , char *argv[]){
     for(int i = 0; i< argc; i++){
         if(strcmp(argv[i],"runForward") == 0){
-            // runForward();
+            runForward();
         }
     }
-    float **a=mat::createHost(8,8);
-    float **b=mat::createHost(8,8);
-    float **e=mat::createHost(8,8);
-    float **c=mat::createHost(8,8);
-    float **d=mat::createHost(8,8);
-    float **cc=mat::createHost(8,8);
-    float **dd=mat::createHost(8,8);
-
-    mat::initHost(c,8,8,0);
-    for(int i=0;i<8;i++){
-        for(int j=0;j<8;j++){
-            a[i][j]=(i+5)*(j+7)-(float)(i+2)/(j+6);
-            b[i][j]=(i+1)*(j+9)+(float)(i+3)/(j+4);
-            e[i][j]=(i+11)*(j+19)+(float)(i+13)/(j+14);
-        }
-    }
-    divVXZ(c, d,cc,dd, b,a, 1, 1, 8, 8, 4);
-    printMat(cc,8,8);
-    printMat(dd,8,8);
+    // float **a=mat::createHost(8,8);
+    // float **b=mat::createHost(8,8);
+    // float **e=mat::createHost(8,8);
+    // float **c=mat::createHost(8,8);
+    // float **d=mat::createHost(8,8);
+    // float **cc=mat::createHost(8,8);
+    // float **dd=mat::createHost(8,8);
+    //
+    // mat::initHost(c,8,8,0);
+    // for(int i=0;i<8;i++){
+    //     for(int j=0;j<8;j++){
+    //         a[i][j]=(i+5)*(j+7)-(float)(i+2)/(j+6);
+    //         b[i][j]=(i+1)*(j+9)+(float)(i+3)/(j+4);
+    //         e[i][j]=(i+11)*(j+19)+(float)(i+13)/(j+14);
+    //     }
+    // }
+    // divVXZ(c, d,cc,dd, b,a, 1, 1, 8, 8, 4);
+    // printMat(cc,8,8);
+    // printMat(dd,8,8);
 
     return 0;
 }
