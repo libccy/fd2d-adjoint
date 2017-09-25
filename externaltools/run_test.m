@@ -1,31 +1,16 @@
 tic;
 % [v_rec,t,u_fw,v_fw,rec_x,rec_z]=run_forward;
-[stf_z, t, abs] = run_cuda('runForward',{'stf_z', 't','abs'});
+[stf_z, t, vx] = run_cuda('runForward',{'stf_z', 't','vx'});
 toc;
 
-% a=zeros(8,8);
-% b=zeros(8,8);
-% e=zeros(8,8);
-% for i=1:8
-%     for j=1:8
-%         a(i,j)=(i+4)*(j+6)-(i+1)/(j+5);
-%         b(i,j)=(i+0)*(j+8)+(i+2)/(j+3);
-%         e(i,j)=(i+10)*(j+18)+(i+12)/(j+13);
-%     end
-% end
-% % [c,d]=div_s_PSV(a,e,b,1,1,8,8,4);
-% [c,d,cc,dd]=grad_v_PSV(b,a,1,1,8,8,4);
-% o=dd;
-% disp(o(3,3:6));
-% disp(o(4,3:6));
-% disp(o(5,3:6));
-% disp(o(6,3:6));
+plot(1:length(vx),vx);
+% plot(1:length(v_rec{1}.z),v_rec{1}.z);
 
 % subplot(2,1,1)
 % plot(t, stf_z);
 % xlabel('vx')
 % subplot(2,1,2)
-% plot(1:length(abs),abs);
+% plot(1:length(vx),vx);
 % xlabel('vz')
 
 % stf = prepare_stf;
@@ -36,5 +21,5 @@ toc;
 % plot(0.1:0.1:500,v_rec{1}.x);
 % xlabel('vx')
 % subplot(2,1,2)
-% plot(0.1:0.1:500,v_rec{1}.z);
+% plot(1:length(v_rec{1}.z),v_rec{1}.z);
 % xlabel('vz')

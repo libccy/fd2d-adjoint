@@ -90,6 +90,10 @@ typedef struct{
     float **dvzdx;
     float **dvzdz;
 
+    float **v_rec_x;
+    float **v_rec_y;
+    float **v_rec_z;
+
     float ***ux_forward;
     float ***uy_forward;
     float ***uz_forward;
@@ -355,6 +359,13 @@ void updateSXZ(float **sxx, float **szz, float **sxz, float **dvxdx, float **dvx
         }
     }
 }
+void updateU(float **u, float **v, float dt, int nx, int nz){
+    for(int i = 0; i < nx; i++){
+        for(int j = 0; j < nz; j++){
+            u[i][j] = v[i][j] * dt;
+        }
+    }
+}
 
 fdat *importData(void){
     fdat *dat = new fdat;
@@ -556,23 +567,21 @@ void initialiseDynamicFields(fdat *dat){
     int nz = dat->nz;
     int nsfe = (int)(dat->nt / dat->sfe);
     if(dat->wave_propagation_sh){
-        mat::init(dat->vy, nx, nz, 0);
-        mat::init(dat->uy, nx, nz, 0);
-        mat::init(dat->sxy, nx, nz, 0);
-        mat::init(dat->szy, nx, nz, 0);
-        mat::init(dat->vy_forward, nsfe, nx, nz, 0);
+        mat::initHost(dat->vy, nx, nz, 0);
+        mat::initHost(dat->uy, nx, nz, 0);
+        mat::initHost(dat->sxy, nx, nz, 0);
+        mat::initHost(dat->szy, nx, nz, 0);
     }
     if(dat->wave_propagation_psv){
-        mat::init(dat->vx, nx, nz, 0);
-        mat::init(dat->vz, nx, nz, 0);
-        mat::init(dat->ux, nx, nz, 0);
-        mat::init(dat->uz, nx, nz, 0);
-        mat::init(dat->sxx, nx, nz, 0);
-        mat::init(dat->szz, nx, nz, 0);
-        mat::init(dat->sxz, nx, nz, 0);
-        mat::init(dat->vx_forward, nsfe, nx, nz, 0);
-        mat::init(dat->vz_forward, nsfe, nx, nz, 0);
+        mat::initHost(dat->vx, nx, nz, 0);
+        mat::initHost(dat->vz, nx, nz, 0);
+        mat::initHost(dat->ux, nx, nz, 0);
+        mat::initHost(dat->uz, nx, nz, 0);
+        mat::initHost(dat->sxx, nx, nz, 0);
+        mat::initHost(dat->szz, nx, nz, 0);
+        mat::initHost(dat->sxz, nx, nz, 0);
     }
+    // need to initialise v_forward? later
     // initialise kernels: later
 }
 void initialiseAbsorbingBoundaries(fdat *dat){
@@ -604,13 +613,6 @@ void initialiseAbsorbingBoundaries(fdat *dat){
             }
         }
     }
-    // later
-    int nz=dat->nz;
-    float *abs=mat::createHost(nz);
-    for(int i=0;i<nz;i++){
-        abs[i]=dat->absbound[i][i];
-    }
-    mat::write(abs,nz,"abs");
 }
 void runWaveFieldPropagation(fdat *dat){
     initialiseDynamicFields(dat);
@@ -619,24 +621,26 @@ void runWaveFieldPropagation(fdat *dat){
 
     int sh = dat->wave_propagation_sh;
     int psv = dat->wave_propagation_psv;
-    int nx = dat->nx;
-    int nz = dat->nz;
-    int dx = dat->dx;
-    int dz = dat->dz;
     int order = dat->order;
 
-    for(int n = 0; n < dat->nt; n++){
-        if((n + 1) % dat->sfe == 0){
-            int isfe = (int)(dat->nt / dat->sfe) - (n + 1) / dat->sfe;
-            if(sh){
-                copyMat(dat->uy_forward[isfe], dat->uy, nx, nz);
-            }
-            if(psv){
-                copyMat(dat->ux_forward[isfe], dat->ux, nx, nz);
-                copyMat(dat->uz_forward[isfe], dat->uz, nx, nz);
-            }
-        }
+    int nx = dat->nx;
+    int nz = dat->nz;
+    int nt = dat->nt;
+    float dx = dat->dx;
+    float dz = dat->dz;
+    float dt = dat->dt;
 
+    for(int n = 0; n < dat->nt; n++){
+        // if((n + 1) % dat->sfe == 0){
+        //     int isfe = (int)(nt / dat->sfe) - (n + 1) / dat->sfe;
+        //     if(sh){
+        //         copyMat(dat->uy_forward[isfe], dat->uy, nx, nz);
+        //     }
+        //     if(psv){
+        //         copyMat(dat->ux_forward[isfe], dat->ux, nx, nz);
+        //         copyMat(dat->uz_forward[isfe], dat->uz, nx, nz);
+        //     }
+        // }
         if(sh){
             divSY(dat->dsy, dat->sxy, dat->szy, dx, dz, nx, nz, order);
         }
@@ -657,18 +661,36 @@ void runWaveFieldPropagation(fdat *dat){
             }
         }
         if(sh){
-            updateV(dat->vy, dat->dsy, dat->rho, dat->absbound, dat->dt, nx, nz);
+            updateV(dat->vy, dat->dsy, dat->rho, dat->absbound, dt, nx, nz);
             divVY(dat->dvydx, dat->dvydz, dat->vy, dx, dz, nx, nz, dat->order);
-            updateSY(dat->sxy, dat->szy, dat->dvydx, dat->dvydz, dat->mu, dat->dt, nx, nz);
+            updateSY(dat->sxy, dat->szy, dat->dvydx, dat->dvydz, dat->mu, dt, nx, nz);
+            updateU(dat->uy, dat->vy, nx, nz, dt);
         }
         if(psv){
-            updateV(dat->vx, dat->dsx, dat->rho, dat->absbound, dat->dt, nx, nz);
-            updateV(dat->vz, dat->dsz, dat->rho, dat->absbound, dat->dt, nx, nz);
+            updateV(dat->vx, dat->dsx, dat->rho, dat->absbound, dt, nx, nz);
+            updateV(dat->vz, dat->dsz, dat->rho, dat->absbound, dt, nx, nz);
             divVXZ(dat->dvxdx, dat->dvxdz, dat->dvzdx, dat->dvzdz, dat->vx, dat->vz, dx, dz, nx, nz, order);
-            updateSXZ(dat->sxx, dat->szz, dat->sxz, dat->dvxdx, dat->dvxdz, dat->dvzdx, dat->dvzdz, dat->lambda, dat->mu, dat->dt, nx, nz);
+            updateSXZ(dat->sxx, dat->szz, dat->sxz, dat->dvxdx, dat->dvxdz, dat->dvzdx, dat->dvzdz, dat->lambda, dat->mu, dt, nx, nz);
+            updateU(dat->ux, dat->vx, dt, nx, nz);
+            updateU(dat->uz, dat->vz, dt, nx, nz);
+            //from here
         }
-        // next: compute displacement field
+        if(dat->simulation_mode == 0){
+            for(int ir = 0; ir < dat->nrec; ir++){
+                int xs = dat->rec_x_id[ir];
+                int zs = dat->rec_z_id[ir];
+                if(sh){
+                    dat->v_rec_y[ir][n] = dat->vy[xs][zs];
+                }
+                if(psv){
+                    dat->v_rec_x[ir][n] = dat->vx[xs][zs];
+                    dat->v_rec_z[ir][n] = dat->vz[xs][zs];
+                }
+            }
+            // next: store time-reversed history
+        }
     }
+    mat::write(dat->v_rec_z[0], dat->nt, "vx");
 }
 void checkArgs(fdat *dat){
     int nx = dat->nx;
@@ -685,6 +707,7 @@ void checkArgs(fdat *dat){
         dat->dsy = mat::createHost(nx, nz);
         dat->dvydx = mat::createHost(nx, nz);
         dat->dvydz = mat::createHost(nx, nz);
+        dat->v_rec_y = mat::createHost(dat->nrec, dat->nt);
         dat->uy_forward = mat::createHost(nsfe, nx, nz);
         dat->vy_forward = mat::createHost(nsfe, nx, nz);
     }
@@ -702,6 +725,8 @@ void checkArgs(fdat *dat){
         dat->dvxdz = mat::createHost(nx, nz);
         dat->dvzdx = mat::createHost(nx, nz);
         dat->dvzdz = mat::createHost(nx, nz);
+        dat->v_rec_x = mat::createHost(dat->nrec, dat->nt);
+        dat->v_rec_z = mat::createHost(dat->nrec, dat->nt);
         dat->ux_forward = mat::createHost(nsfe, nx, nz);
         dat->uz_forward = mat::createHost(nsfe, nx, nz);
         dat->vx_forward = mat::createHost(nsfe, nx, nz);

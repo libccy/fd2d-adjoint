@@ -102,7 +102,7 @@ nz = 301;   % PREM: dz = 10 km
 % dt = 0.8;    % time step [s] - dx=dz= 20 km
 dt = 0.1; % good for visualising
 % dt=0.1;       % time step [s] 0.5 explodes, 0.4 suffices @PREM dx=dz=10km
-tmax = 500;    % length of run [s] -- 1200 should be enough for ScS (=935 s) (PcP = 510)
+tmax = 100;    % length of run [s] -- 1200 should be enough for ScS (=935 s) (PcP = 510)
 nt = ceil(tmax/dt); % number of iterations
 nt=store_fw_every*round(nt/store_fw_every);
 
@@ -252,9 +252,13 @@ change_freq_every = 1;          % how many iterations with the same freq?
 % rec_z = Lz / 2;
 
 % 3 receivers
-nrec = 3;
-rec_x = (1: 1: nrec) * (Lx/(nrec+1));
-rec_z = (1: 1: nrec) * (Lz/(nrec+1));
+% nrec = 3;
+% rec_x = (1: 1: nrec) * (Lx/(nrec+1));
+% rec_z = (1: 1: nrec) * (Lz/(nrec+1));
+
+nsrc = 4;
+rec_x= (1: 1: nsrc) * (Lx/(nsrc+1));
+rec_z=ones(size(src_x)) * (Lz / 2);
 
 % %- a line of receivers just below the top boundary
 % nrec = 16;
