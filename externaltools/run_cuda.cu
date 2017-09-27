@@ -345,8 +345,8 @@ void updateV(float **v, float **ds, float **rho, float **absbound, float dt, int
 void updateSY(float **sxy, float **szy, float **dvydx, float **dvydz, float **mu, float dt, int nx, int nz){
     for(int i = 0; i < nx; i++){
         for(int j = 0; j < nz; j++){
-            sxy[i][j] += dt * mu[i][j] + dvydx[i][j];
-            szy[i][j] += dt * mu[i][j] + dvydz[i][j];
+            sxy[i][j] += dt * mu[i][j] * dvydx[i][j];
+            szy[i][j] += dt * mu[i][j] * dvydz[i][j];
         }
     }
 }
@@ -355,7 +355,7 @@ void updateSXZ(float **sxx, float **szz, float **sxz, float **dvxdx, float **dvx
         for(int j = 0; j < nz; j++){
             sxx[i][j] += dt * ((lambda[i][j] + 2 * mu[i][j]) * dvxdx[i][j] + lambda[i][j] * dvzdz[i][j]);
             szz[i][j] += dt * ((lambda[i][j] + 2 * mu[i][j]) * dvzdz[i][j] + lambda[i][j] * dvxdx[i][j]);
-            sxz[i][j] += dt * (mu[i][j] * (dvxdz[i][j] + dvxdz[i][j]));
+            sxz[i][j] += dt * (mu[i][j] * (dvxdz[i][j] + dvzdx[i][j]));
         }
     }
 }
@@ -690,7 +690,7 @@ void runWaveFieldPropagation(fdat *dat){
             // next: store time-reversed history
         }
     }
-    mat::write(dat->v_rec_z[0], dat->nt, "vx");
+    mat::write(dat->v_rec_z[0], nt, "vx");
 }
 void checkArgs(fdat *dat){
     int nx = dat->nx;
@@ -703,6 +703,7 @@ void checkArgs(fdat *dat){
     if(dat->wave_propagation_sh){
         dat->vy = mat::createHost(nx, nz);
         dat->uy = mat::createHost(nx, nz);
+        dat->sxy = mat::createHost(nx, nz);
         dat->szy = mat::createHost(nx, nz);
         dat->dsy = mat::createHost(nx, nz);
         dat->dvydx = mat::createHost(nx, nz);

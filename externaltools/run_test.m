@@ -1,10 +1,19 @@
+type = 1;
 tic;
-% [v_rec,t,u_fw,v_fw,rec_x,rec_z]=run_forward;
-[stf_z, t, vx] = run_cuda('runForward',{'stf_z', 't','vx'});
+if type == 0
+    [v_rec,t,u_fw,v_fw,rec_x,rec_z]=run_forward;
+else
+    if type == 1
+        compile_cuda;
+    end
+    [stf_z, t, vx] = run_cuda('runForward',{'stf_z', 't','vx'});
+end
 toc;
-
-plot(1:length(vx),vx);
-% plot(1:length(v_rec{1}.z),v_rec{1}.z);
+if type == 0
+    plot(1:length(v_rec{1}.z),v_rec{1}.z);
+else
+    plot(1:length(vx),vx);
+end
 
 % subplot(2,1,1)
 % plot(t, stf_z);
