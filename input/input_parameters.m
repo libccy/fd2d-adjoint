@@ -105,7 +105,7 @@ dt = 0.1; % good for visualising
 tmax = 100;    % length of run [s] -- 1200 should be enough for ScS (=935 s) (PcP = 510)
 nt = ceil(tmax/dt); % number of iterations
 nt=store_fw_every*round(nt/store_fw_every);
-
+nt=1006;
 order=4;    % finite-difference order (2 or 4) (2 is not recommended)
 
 %==========================================================================

@@ -383,7 +383,7 @@ void updateSXZ(float **sxx, float **szz, float **sxz, float **dvxdx, float **dvx
 void updateU(float **u, float **v, float dt, int nx, int nz){
     for(int i = 0; i < nx; i++){
         for(int j = 0; j < nz; j++){
-            u[i][j] = v[i][j] * dt;
+            u[i][j] += v[i][j] * dt;
         }
     }
 }
@@ -413,12 +413,15 @@ fdat *importData(void){
         else{
             dat->nx = root["nx"];
             dat->nz = root["nz"];
-            dat->nt = root["nt"]; // nt = sfe*round(nt/sfe): later
+            dat->nt = root["nt"];
             dat->dt = root["dt"];
             dat->Lx = root["Lx"];
             dat->Lz = root["Lz"];
-
             dat->sfe = root["sfe"];
+            if(dat->nt % dat->sfe != 0){
+                dat->nt = dat->sfe * (int)((float)dat->nt / dat->sfe + 0.5);
+            }
+
             dat->model_type = root["model_type"];
             dat->use_given_model = root["use_given_model"];
             dat->use_given_stf = root["use_given_stf"];
@@ -586,7 +589,6 @@ void computeIndices(int *coord_n_id, float *coord_n, float Ln, float n, int nthi
 void initialiseDynamicFields(fdat *dat){
     int nx = dat->nx;
     int nz = dat->nz;
-    int nsfe = (int)(dat->nt / dat->sfe);
     if(dat->wave_propagation_sh){
         mat::initHost(dat->vy, nx, nz, 0);
         mat::initHost(dat->uy, nx, nz, 0);
@@ -643,6 +645,7 @@ void runWaveFieldPropagation(fdat *dat){
     int sh = dat->wave_propagation_sh;
     int psv = dat->wave_propagation_psv;
     int order = dat->order;
+    int mode = dat->simulation_mode;
 
     int nx = dat->nx;
     int nz = dat->nz;
@@ -652,23 +655,23 @@ void runWaveFieldPropagation(fdat *dat){
     float dt = dat->dt;
 
     for(int n = 0; n < dat->nt; n++){
-        // if((n + 1) % dat->sfe == 0){
-        //     int isfe = (int)(nt / dat->sfe) - (n + 1) / dat->sfe;
-        //     if(sh){
-        //         copyMat(dat->uy_forward[isfe], dat->uy, nx, nz);
-        //     }
-        //     if(psv){
-        //         copyMat(dat->ux_forward[isfe], dat->ux, nx, nz);
-        //         copyMat(dat->uz_forward[isfe], dat->uz, nx, nz);
-        //     }
-        // }
+        if((n + 1) % dat->sfe == 0){
+            int isfe = (int)(nt / dat->sfe) - (n + 1) / dat->sfe;
+            if(sh){
+                copyMat(dat->uy_forward[isfe], dat->uy, nx, nz);
+            }
+            if(psv){
+                copyMat(dat->ux_forward[isfe], dat->ux, nx, nz);
+                copyMat(dat->uz_forward[isfe], dat->uz, nx, nz);
+            }
+        }
         if(sh){
             divSY(dat->dsy, dat->sxy, dat->szy, dx, dz, nx, nz, order);
         }
         if(psv){
             divSXZ(dat->dsx, dat->dsz, dat->sxx, dat->szz, dat->sxz, dx, dz, nx, nz, order);
         }
-        if(dat->simulation_mode == 0 || dat->simulation_mode == 1){
+        if(mode == 0 || mode == 1){
             for(int is = 0; is < dat->nsrc; is++){
                 int xs = dat->src_x_id[is];
                 int zs = dat->src_z_id[is];
@@ -695,19 +698,31 @@ void runWaveFieldPropagation(fdat *dat){
             updateU(dat->ux, dat->vx, dt, nx, nz);
             updateU(dat->uz, dat->vz, dt, nx, nz);
         }
-        if(dat->simulation_mode == 0){
+        if(mode == 0){
             for(int ir = 0; ir < dat->nrec; ir++){
-                int xs = dat->rec_x_id[ir];
-                int zs = dat->rec_z_id[ir];
+                int xr = dat->rec_x_id[ir];
+                int zr = dat->rec_z_id[ir];
                 if(sh){
-                    dat->v_rec_y[ir][n] = dat->vy[xs][zs];
+                    dat->v_rec_y[ir][n] = dat->vy[xr][zr];
                 }
                 if(psv){
-                    dat->v_rec_x[ir][n] = dat->vx[xs][zs];
-                    dat->v_rec_z[ir][n] = dat->vz[xs][zs];
+                    dat->v_rec_x[ir][n] = dat->vx[xr][zr];
+                    dat->v_rec_z[ir][n] = dat->vz[xr][zr];
                 }
             }
-            // next: store time-reversed history
+            if((n + 1) % dat->sfe == 0){
+                int isfe = (int)(nt / dat->sfe) - (n + 1) / dat->sfe;
+                if(sh){
+                    copyMat(dat->vy_forward[isfe], dat->vy, nx, nz);
+                }
+                if(psv){
+                    copyMat(dat->vx_forward[isfe], dat->vx, nx, nz);
+                    copyMat(dat->vz_forward[isfe], dat->vz, nx, nz);
+                }
+            }
+        }
+        else if(mode == 1){
+            // adjoint: later
         }
     }
     char oname[50];
