@@ -252,13 +252,13 @@ change_freq_every = 1;          % how many iterations with the same freq?
 % rec_z = Lz / 2;
 
 % 3 receivers
-% nrec = 3;
-% rec_x = (1: 1: nrec) * (Lx/(nrec+1));
-% rec_z = (1: 1: nrec) * (Lz/(nrec+1));
+nrec = 3;
+rec_x = (1: 1: nrec) * (Lx/(nrec+1));
+rec_z = (1: 1: nrec) * (Lz/(nrec+1));
 
-nsrc = 4;
-rec_x= (1: 1: nsrc) * (Lx/(nsrc+1));
-rec_z=ones(size(src_x)) * (Lz / 2);
+% nsrc = 4;
+% rec_x= (1: 1: nsrc) * (Lx/(nsrc+1));
+% rec_z=ones(size(src_x)) * (Lz / 2);
 
 % %- a line of receivers just below the top boundary
 % nrec = 16;

@@ -694,7 +694,6 @@ void runWaveFieldPropagation(fdat *dat){
             updateSXZ(dat->sxx, dat->szz, dat->sxz, dat->dvxdx, dat->dvxdz, dat->dvzdx, dat->dvzdz, dat->lambda, dat->mu, dt, nx, nz);
             updateU(dat->ux, dat->vx, dt, nx, nz);
             updateU(dat->uz, dat->vz, dt, nx, nz);
-            //from here
         }
         if(dat->simulation_mode == 0){
             for(int ir = 0; ir < dat->nrec; ir++){
@@ -711,7 +710,13 @@ void runWaveFieldPropagation(fdat *dat){
             // next: store time-reversed history
         }
     }
-    mat::write(dat->v_rec_x[0], nt, "vx");
+    char oname[50];
+    for(int i = 0; i < dat->nrec; i++){
+        sprintf(oname, "vx%d", i);
+        mat::write(dat->v_rec_x[i], nt, oname);
+        sprintf(oname, "vz%d", i);
+        mat::write(dat->v_rec_z[i], nt, oname);
+    }
 }
 void checkArgs(fdat *dat){
     int nx = dat->nx;
@@ -792,8 +797,6 @@ void runForward(void){
     fdat *dat = importData();
     checkArgs(dat);
     runWaveFieldPropagation(dat);
-
-    mat::write(dat->stf_z[0],dat->nt,"stf_z"); // later
 }
 
 int main(int argc , char *argv[]){
