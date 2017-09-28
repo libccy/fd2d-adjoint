@@ -283,55 +283,76 @@ void copyMat(float **a, float **b, int nx, int nz){
 
 void divSY(float **out, float **sxy, float **szy, float dx, float dz, int nx, int nz, int order){
     // order = 2: later
-    for(int i = 2; i < nx - 2; i++){
-        for(int j = 0; j < nz; j++){
-            out[i][j] = 9*(sxy[i][j]-sxy[i-1][j])/(8*dx)-(sxy[i+1][j]-sxy[i-2][j])/(24*dx);
-        }
-    }
     for(int i = 0; i < nx; i++){
-        for(int j = 2; j < nz - 2; j++){
-            out[i][j] += 9*(szy[i][j]-szy[i][j-1])/(8*dz)-(szy[i][j+1]-szy[i][j-2])/(24*dz);
+        for(int j = 0; j < nz; j++){
+            if(i >= 2 && i < nx - 2){
+                out[i][j] = 9*(sxy[i][j]-sxy[i-1][j])/(8*dx)-(sxy[i+1][j]-sxy[i-2][j])/(24*dx);
+            }
+            else{
+                out[i][j] = 0;
+            }
+            if(j >= 2 && j < nz - 2){
+                out[i][j] += 9*(szy[i][j]-szy[i][j-1])/(8*dz)-(szy[i][j+1]-szy[i][j-2])/(24*dz);
+            }
         }
     }
 }
 void divSXZ(float **outx, float **outz, float **sxx, float **szz, float **sxz, float dx, float dz, int nx, int nz, int order){
     // order = 2: later
-    for(int i = 2; i < nx - 2; i++){
-        for(int j = 0; j < nz; j++){
-            outx[i][j] = 9*(sxx[i][j]-sxx[i-1][j])/(8*dx)-(sxx[i+1][j]-sxx[i-2][j])/(24*dx);
-            outz[i][j] = 9*(sxz[i][j]-sxz[i-1][j])/(8*dx)-(sxz[i+1][j]-sxz[i-2][j])/(24*dx);
-        }
-    }
     for(int i = 0; i < nx; i++){
-        for(int j = 2; j < nz - 2; j++){
-            outx[i][j] += 9*(sxz[i][j]-sxz[i][j-1])/(8*dz)-(sxz[i][j+1]-sxz[i][j-2])/(24*dz);
-            outz[i][j] += 9*(szz[i][j]-szz[i][j-1])/(8*dz)-(szz[i][j+1]-szz[i][j-2])/(24*dz);
+        for(int j = 0; j < nz; j++){
+            if(i >= 2 && i < nx - 2){
+                outx[i][j] = 9*(sxx[i][j]-sxx[i-1][j])/(8*dx)-(sxx[i+1][j]-sxx[i-2][j])/(24*dx);
+                outz[i][j] = 9*(sxz[i][j]-sxz[i-1][j])/(8*dx)-(sxz[i+1][j]-sxz[i-2][j])/(24*dx);
+            }
+            else{
+                outx[i][j] = 0;
+                outz[i][j] = 0;
+            }
+            if(j >= 2 && j < nz - 2){
+                outx[i][j] += 9*(sxz[i][j]-sxz[i][j-1])/(8*dz)-(sxz[i][j+1]-sxz[i][j-2])/(24*dz);
+                outz[i][j] += 9*(szz[i][j]-szz[i][j-1])/(8*dz)-(szz[i][j+1]-szz[i][j-2])/(24*dz);
+            }
         }
     }
 }
 void divVY(float **outx, float **outz, float **vy, float dx, float dz, int nx, int nz, int order){
-    for(int i = 1; i < nx - 2; i++){
-        for(int j = 0; j < nz; j++){
-            outx[i][j] = 9*(vy[i+1][j]-vy[i][j])/(8*dx)-(vy[i+2][j]-vy[i-1][j])/(24*dx);
-        }
-    }
     for(int i = 0; i < nx; i++){
-        for(int j = 1; j < nz - 2; j++){
-            outz[i][j] = 9*(vy[i][j+1]-vy[i][j])/(8*dz)-(vy[i][j+2]-vy[i][j-1])/(24*dz);
+        for(int j = 0; j < nz; j++){
+            if(i >= 1 && i < nx - 2){
+                outx[i][j] = 9*(vy[i+1][j]-vy[i][j])/(8*dx)-(vy[i+2][j]-vy[i-1][j])/(24*dx);
+            }
+            else{
+                outx[i][j] = 0;
+            }
+            if(j >= 1 && j < nz - 2){
+                outz[i][j] = 9*(vy[i][j+1]-vy[i][j])/(8*dz)-(vy[i][j+2]-vy[i][j-1])/(24*dz);
+            }
+            else{
+                outz[i][j] = 0;
+            }
         }
     }
 }
 void divVXZ(float **outxx, float **outxz, float **outzx, float **outzz, float **vx, float **vz, float dx, float dz, int nx, int nz, int order){
-    for(int i = 1; i < nx - 2; i++){
-        for(int j = 0; j < nz; j++){
-            outxx[i][j] = 9*(vx[i+1][j]-vx[i][j])/(8*dx)-(vx[i+2][j]-vx[i-1][j])/(24*dx);
-            outzx[i][j] = 9*(vz[i+1][j]-vz[i][j])/(8*dx)-(vz[i+2][j]-vz[i-1][j])/(24*dx);
-        }
-    }
     for(int i = 0; i < nx; i++){
-        for(int j = 1; j < nz - 2; j++){
-            outxz[i][j] = 9*(vx[i][j+1]-vx[i][j])/(8*dz)-(vx[i][j+2]-vx[i][j-1])/(24*dz);
-            outzz[i][j] = 9*(vz[i][j+1]-vz[i][j])/(8*dz)-(vz[i][j+2]-vz[i][j-1])/(24*dz);
+        for(int j = 0; j < nz; j++){
+            if(i >= 1 && i < nx - 2){
+                outxx[i][j] = 9*(vx[i+1][j]-vx[i][j])/(8*dx)-(vx[i+2][j]-vx[i-1][j])/(24*dx);
+                outzx[i][j] = 9*(vz[i+1][j]-vz[i][j])/(8*dx)-(vz[i+2][j]-vz[i-1][j])/(24*dx);
+            }
+            else{
+                outxx[i][j] = 0;
+                outzx[i][j] = 0;
+            }
+            if(j >= 1 && j < nz - 2){
+                outxz[i][j] = 9*(vx[i][j+1]-vx[i][j])/(8*dz)-(vx[i][j+2]-vx[i][j-1])/(24*dz);
+                outzz[i][j] = 9*(vz[i][j+1]-vz[i][j])/(8*dz)-(vz[i][j+2]-vz[i][j-1])/(24*dz);
+            }
+            else{
+                outxz[i][j] = 0;
+                outzz[i][j] = 0;
+            }
         }
     }
 }
@@ -690,7 +711,7 @@ void runWaveFieldPropagation(fdat *dat){
             // next: store time-reversed history
         }
     }
-    mat::write(dat->v_rec_z[0], nt, "vx");
+    mat::write(dat->v_rec_x[0], nt, "vx");
 }
 void checkArgs(fdat *dat){
     int nx = dat->nx;

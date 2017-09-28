@@ -1,4 +1,5 @@
 type = 1;
+clc;
 tic;
 if type == 0
     [v_rec,t,u_fw,v_fw,rec_x,rec_z]=run_forward;
@@ -10,7 +11,7 @@ else
 end
 toc;
 if type == 0
-    plot(1:length(v_rec{1}.z),v_rec{1}.z);
+    plot(1:length(v_rec{1}.x),v_rec{1}.x);
 else
     plot(1:length(vx),vx);
 end
