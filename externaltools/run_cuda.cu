@@ -604,7 +604,6 @@ void initialiseDynamicFields(fdat *dat){
         mat::initHost(dat->szz, nx, nz, 0);
         mat::initHost(dat->sxz, nx, nz, 0);
     }
-    // need to initialise v_forward? later
     // initialise kernels: later
 }
 void initialiseAbsorbingBoundaries(fdat *dat){
@@ -640,7 +639,6 @@ void initialiseAbsorbingBoundaries(fdat *dat){
 void runWaveFieldPropagation(fdat *dat){
     initialiseDynamicFields(dat);
     initialiseAbsorbingBoundaries(dat);
-    printf("iterating...\n");
 
     int sh = dat->wave_propagation_sh;
     int psv = dat->wave_propagation_psv;
