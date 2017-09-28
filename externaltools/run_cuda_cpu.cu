@@ -441,6 +441,41 @@ fdat *importData(void){
             dat->f_min = mat::createHost(dat->nsrc);
             dat->f_max = mat::createHost(dat->nsrc);
 
+            const char* wave_propagation_type = root["wave_propagation_type"].as<char*>();
+            if(strcmp(wave_propagation_type,"SH") == 0){
+                dat->wave_propagation_sh = 1;
+                dat->wave_propagation_psv = 0;
+            }
+            else if(strcmp(wave_propagation_type,"PSV") == 0){
+                dat->wave_propagation_sh = 0;
+                dat->wave_propagation_psv = 1;
+            }
+            else if(strcmp(wave_propagation_type,"both") == 0){
+                dat->wave_propagation_sh = 1;
+                dat->wave_propagation_psv = 1;
+            }
+            else{
+                dat->wave_propagation_sh = 0;
+                dat->wave_propagation_psv = 0;
+            }
+
+            dat->absorb_left = root["absorb_left"];
+            dat->absorb_right = root["absorb_right"];
+            dat->absorb_top = root["absorb_top"];
+            dat->absorb_bottom = root["absorb_bottom"];
+            dat->absorb_width = root["width"];
+
+            const char* simulation_mode = root["simulation_mode"].as<char*>();
+            if(strcmp(simulation_mode,"forward") == 0){
+                dat->simulation_mode = 0;
+            }
+            else if(strcmp(simulation_mode,"adjoint") == 0){
+                dat->simulation_mode = 1;
+            }
+            else{
+                dat->simulation_mode = -1;
+            }
+
             for(int i = 0; i < dat->nsrc; i++){
                 JsonObject& src = single_src?root["src_info"]:((JsonArray&)root["src_info"]).get<JsonObject>(i);
                 dat->src_x[i] = src["loc_x"];
@@ -478,41 +513,6 @@ fdat *importData(void){
             for(int i = 0; i < dat->nrec; i++){
                 dat->rec_x[i] = single_rec?root["rec_x"]:((JsonArray&)root["rec_x"]).get<float>(i);
                 dat->rec_z[i] = single_rec?root["rec_z"]:((JsonArray&)root["rec_z"]).get<float>(i);
-            }
-
-            const char* wave_propagation_type = root["wave_propagation_type"].as<char*>();
-            if(strcmp(wave_propagation_type,"SH") == 0){
-                dat->wave_propagation_sh = 1;
-                dat->wave_propagation_psv = 0;
-            }
-            else if(strcmp(wave_propagation_type,"PSV") == 0){
-                dat->wave_propagation_sh = 0;
-                dat->wave_propagation_psv = 1;
-            }
-            else if(strcmp(wave_propagation_type,"both") == 0){
-                dat->wave_propagation_sh = 1;
-                dat->wave_propagation_psv = 1;
-            }
-            else{
-                dat->wave_propagation_sh = 0;
-                dat->wave_propagation_psv = 0;
-            }
-
-            dat->absorb_left = root["absorb_left"];
-            dat->absorb_right = root["absorb_right"];
-            dat->absorb_top = root["absorb_top"];
-            dat->absorb_bottom = root["absorb_bottom"];
-            dat->absorb_width = root["width"];
-
-            const char* simulation_mode = root["simulation_mode"].as<char*>();
-            if(strcmp(simulation_mode,"forward") == 0){
-                dat->simulation_mode = 0;
-            }
-            else if(strcmp(simulation_mode,"adjoint") == 0){
-                dat->simulation_mode = 1;
-            }
-            else{
-                dat->simulation_mode = -1;
             }
         }
         jsonBuffer.clear();
