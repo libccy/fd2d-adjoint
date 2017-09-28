@@ -87,8 +87,8 @@ Lz=1500e3;     % model extension in z-direction [m] ! PREM: don't exceed 2891
 % nz=430;     % grid points in z-direction --> PREM: dz = 6.72 km
 % nx = 241;   % PREM: dx = 25 km
 % nz = 116;   % PREM: dz = 25 km
-nx = 601;   % PREM: dx = 10 km
-nz = 301;   % PREM: dz = 10 km
+nx = 201;   % PREM: dx = 10 km
+nz = 101;   % PREM: dz = 10 km
 % nx = 301;   % PREM: dx = 20 km
 % nz = 145;   % PREM: dz = 20 km
 % nx = 430;   % PREM: dx = ~14 km  (13.99)

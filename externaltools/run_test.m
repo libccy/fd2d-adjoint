@@ -1,4 +1,4 @@
-type = 1;
+type = 3;
 clc;tic;
 if type == 0
     [v_rec,t,u_fw,v_fw,rec_x,rec_z]=run_forward;
@@ -25,21 +25,23 @@ else
     pvz2 = vz2;
 end
 
-subplot(3,2,1)
-plot(1:length(pvx0), pvx0);
-xlabel('vx')
-subplot(3,2,2)
-plot(1:length(pvz0), pvz0);
+if type < 3
+    subplot(3,2,1)
+    plot(1:length(pvx0), pvx0);
+    xlabel('vx')
+    subplot(3,2,2)
+    plot(1:length(pvz0), pvz0);
 
-subplot(3,2,3)
-plot(1:length(pvx1), pvx1);
-xlabel('vx')
-subplot(3,2,4)
-plot(1:length(pvz1), pvz1);
+    subplot(3,2,3)
+    plot(1:length(pvx1), pvx1);
+    xlabel('vx')
+    subplot(3,2,4)
+    plot(1:length(pvz1), pvz1);
 
-subplot(3,2,5)
-plot(1:length(pvx2), pvx2);
-xlabel('vx')
-subplot(3,2,6)
-plot(1:length(pvz2), pvz2);
-xlabel('vz')
+    subplot(3,2,5)
+    plot(1:length(pvx2), pvx2);
+    xlabel('vx')
+    subplot(3,2,6)
+    plot(1:length(pvz2), pvz2);
+    xlabel('vz')
+end
