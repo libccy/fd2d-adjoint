@@ -4,13 +4,10 @@
 #include <string.h>
 #include "ArduinoJson.h"
 
-#define devij(dimx, dimy) \
-int i = blockIdx.x % dimx; \
-int j = threadIdx.x + (blockIdx.x - i) / dimx * dimy / d_nbt;
+#define devij int i = blockIdx.x, j = threadIdx.x + blockIdx.y * blockDim.x;
 
 const float pi = 3.1415927;
-const int nbt = 1;
-__constant__ int d_nbt = 1;
+const int nbt = 2;
 
 typedef struct{
     int nx;
@@ -105,20 +102,20 @@ typedef struct{
 } fdat;
 
 namespace mat{
-    __global__ void _setValue(float *mat, const float init, const int m){
-        int i = threadIdx.x;
+    __global__ void _setValue(float *mat, const float init){
+        int i = blockIdx.x;
         mat[i] = init;
     }
-    __global__ void _setValue(float **mat, const float init, const int m, const int n){
-        devij(m, n);
+    __global__ void _setValue(float **mat, const float init){
+        devij;
         mat[i][j] = init;
     }
-    __global__ void _setValue(float ***mat, const float init, const int m, const int n, const int p){
-        devij(m, n);
+    __global__ void _setValue(float ***mat, const float init, const int p){
+        devij;
         mat[p][i][j] = init;
     }
     __global__ void _setPointerValue(float **mat, float *data, const int n){
-        int i = threadIdx.x;
+        int i = blockIdx.x;
         mat[i] = data + n * i;
     }
     __global__ void _setPointerValue(float ***mat, float **data, const int i){
@@ -127,16 +124,18 @@ namespace mat{
 
 
     float *init(float *mat, const int m, const float init){
-        mat::_setValue<<<1, m>>>(mat, init, m);
+        mat::_setValue<<<m, 1>>>(mat, init);
         return mat;
     }
     float **init(float **mat, const int m, const int n, const float init){
-        mat::_setValue<<<m * nbt, n / nbt>>>(mat, init, m, n);
+        dim3 dimBlock(m, nbt);
+        mat::_setValue<<<dimBlock, n / nbt>>>(mat, init);
         return mat;
     }
     float ***init(float ***mat, const int p, const int m, const int n, const float init){
+        dim3 dimBlock(m, nbt);
         for(int i = 0; i < p; i++){
-            mat::_setValue<<<m * nbt, n / nbt>>>(mat, init, m, n, i);
+            mat::_setValue<<<dimBlock, n / nbt>>>(mat, init, i);
         }
         return mat;
     }
@@ -174,7 +173,7 @@ namespace mat{
     	float *data = mat::create(m * n);
         float **mat;
         cudaMalloc((void **)&mat, m * sizeof(float *));
-        mat::_setPointerValue<<<1, m>>>(mat, data, n);
+        mat::_setPointerValue<<<m, 1>>>(mat, data, n);
     	return mat;
     }
     float ***create(const int p, const int m, const int n){
@@ -265,8 +264,8 @@ namespace mat{
 }
 
 void printMat(float **a, int m, int n){
-    for(int i=2;i<m-2;i++){
-        for(int j=2;j<n-2;j++){
+    for(int i=0;i<m;i++){
+        for(int j=0;j<n;j++){
             printf("%f ", a[i][j]);
         }
         printf("\n");
@@ -390,7 +389,7 @@ void updateU(float **u, float **v, float dt, int nx, int nz){
 }
 
 __global__ void computeIndices(int *coord_n_id, float *coord_n, float Ln, float n){
-    int i = threadIdx.x;
+    int i = blockIdx.x;
     coord_n_id[i] = (int)(coord_n[i] / Ln * (n - 1) + 0.5);
 }
 
@@ -700,11 +699,11 @@ void runWaveFieldPropagation(fdat *dat){
         if((n + 1) % dat->sfe == 0){
             int isfe = (int)(nt / dat->sfe) - (n + 1) / dat->sfe;
             if(sh){
-                copyMat(dat->uy_forward[isfe], dat->uy, nx, nz);
+                mat::copyDeviceToHost(dat->uy_forward[isfe], dat->uy, nx, nz);
             }
             if(psv){
-                copyMat(dat->ux_forward[isfe], dat->ux, nx, nz);
-                copyMat(dat->uz_forward[isfe], dat->uz, nx, nz);
+                mat::copyDeviceToHost(dat->ux_forward[isfe], dat->ux, nx, nz);
+                mat::copyDeviceToHost(dat->uz_forward[isfe], dat->uz, nx, nz);
             }
         }
         if(sh){
@@ -846,10 +845,10 @@ void checkArgs(fdat *dat){
         prepareSTF(dat);
     }
 
-    computeIndices<<<1, dat->nsrc>>>(dat->src_x_id, dat->src_x, dat->Lx, dat->nx);
-    computeIndices<<<1, dat->nsrc>>>(dat->src_z_id, dat->src_z, dat->Lz, dat->nz);
-    computeIndices<<<1, dat->nrec>>>(dat->rec_x_id, dat->rec_x, dat->Lx, dat->nx);
-    computeIndices<<<1, dat->nrec>>>(dat->rec_z_id, dat->rec_z, dat->Lz, dat->nz);
+    computeIndices<<<dat->nsrc, 1>>>(dat->src_x_id, dat->src_x, dat->Lx, dat->nx);
+    computeIndices<<<dat->nsrc, 1>>>(dat->src_z_id, dat->src_z, dat->Lz, dat->nz);
+    computeIndices<<<dat->nrec, 1>>>(dat->rec_x_id, dat->rec_x, dat->Lx, dat->nx);
+    computeIndices<<<dat->nrec, 1>>>(dat->rec_z_id, dat->rec_z, dat->Lz, dat->nz);
 
     float *t = mat::createHost(dat->nt);
     for(int i = 0; i < dat->nt; i++){
@@ -860,8 +859,7 @@ void checkArgs(fdat *dat){
 void runForward(void){
     fdat *dat = importData();
     checkArgs(dat);
-    // from here
-    // runWaveFieldPropagation(dat);
+    runWaveFieldPropagation(dat);
 }
 
 int main(int argc , char *argv[]){
