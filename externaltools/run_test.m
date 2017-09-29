@@ -6,7 +6,7 @@ elseif type > 0
     if type == 1
         compile_cuda;
     end
-    [t, vx0,vz0,vx1,vz1,vx2,vz2] = run_cuda('runForward',{'t','vx0','vz0','vx1','vz1','vx2','vz2'});
+    [t,vx0,vz0,vx1,vz1,vx2,vz2] = run_cuda('runForward',{'t','vx0','vz0','vx1','vz1','vx2','vz2'});
 end
 toc;
 if type <= 0

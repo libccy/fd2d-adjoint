@@ -754,18 +754,6 @@ void runWaveFieldPropagation(fdat *dat){
             // adjoint: later
         }
     }
-
-    char oname[50];
-    float **v_rec_x = mat::createHost(dat->nrec, nt);
-    float **v_rec_z = mat::createHost(dat->nrec, nt);
-    mat::copyDeviceToHost(v_rec_x, dat->v_rec_x, nx, nz);
-    mat::copyDeviceToHost(v_rec_z, dat->v_rec_z, nx, nz);
-    for(int i = 0; i < dat->nrec; i++){
-        sprintf(oname, "vx%d", i);
-        mat::write(v_rec_x[i], nt, oname);
-        sprintf(oname, "vz%d", i);
-        mat::write(v_rec_z[i], nt, oname);
-    }
 }
 void checkArgs(fdat *dat){
     int nx = dat->nx;
@@ -861,6 +849,18 @@ void runForward(void){
     fdat *dat = importData();
     checkArgs(dat);
     runWaveFieldPropagation(dat);
+
+    char oname[50];
+    float **v_rec_x = mat::createHost(dat->nrec, dat->nt);
+    float **v_rec_z = mat::createHost(dat->nrec, dat->nt);
+    mat::copyDeviceToHost(v_rec_x, dat->v_rec_x, dat->nrec, dat->nt);
+    mat::copyDeviceToHost(v_rec_z, dat->v_rec_z, dat->nrec, dat->nt);
+    for(int i = 0; i < dat->nrec; i++){
+        sprintf(oname, "vx%d", i);
+        mat::write(v_rec_x[i], dat->nt, oname);
+        sprintf(oname, "vz%d", i);
+        mat::write(v_rec_z[i], dat->nt, oname);
+    }
 }
 
 int main(int argc , char *argv[]){

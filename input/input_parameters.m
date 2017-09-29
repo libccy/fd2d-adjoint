@@ -87,8 +87,8 @@ Lz=1500e3;     % model extension in z-direction [m] ! PREM: don't exceed 2891
 % nz=430;     % grid points in z-direction --> PREM: dz = 6.72 km
 % nx = 241;   % PREM: dx = 25 km
 % nz = 116;   % PREM: dz = 25 km
-nx = 201;   % PREM: dx = 10 km
-nz = 101;   % PREM: dz = 10 km
+nx = 601;   % PREM: dx = 10 km
+nz = 301;   % PREM: dz = 10 km
 % nx = 301;   % PREM: dx = 20 km
 % nz = 145;   % PREM: dz = 20 km
 % nx = 430;   % PREM: dx = ~14 km  (13.99)
@@ -102,7 +102,7 @@ nz = 101;   % PREM: dz = 10 km
 % dt = 0.8;    % time step [s] - dx=dz= 20 km
 dt = 0.1; % good for visualising
 % dt=0.1;       % time step [s] 0.5 explodes, 0.4 suffices @PREM dx=dz=10km
-tmax = 100;    % length of run [s] -- 1200 should be enough for ScS (=935 s) (PcP = 510)
+tmax = 500;    % length of run [s] -- 1200 should be enough for ScS (=935 s) (PcP = 510)
 nt = ceil(tmax/dt); % number of iterations
 nt=store_fw_every*round(nt/store_fw_every);
 
