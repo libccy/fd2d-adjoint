@@ -31,7 +31,6 @@ fprintf([reverseStr, prevmsg]);
 
 % read input parameters from the input file
 input_parameters;
-simulation_mode = 'adjoint';
 sfe = store_fw_every;
 nt=sfe*round(nt/sfe);   % to make sure nt is a multiple of sfe -- needed because
                     % run_forward saves the forward field every sfe timesteps
