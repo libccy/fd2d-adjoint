@@ -1,4 +1,4 @@
-type = 3;
+type = 1;
 clc;tic;
 if type == 0
     [v_rec,t,u_fw,v_fw,rec_x,rec_z]=run_forward;

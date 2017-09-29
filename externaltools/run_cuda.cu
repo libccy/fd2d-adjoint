@@ -4,7 +4,7 @@
 #include <string.h>
 #include "ArduinoJson.h"
 
-#define devij int i = blockIdx.x, j = threadIdx.x + blockIdx.y * blockDim.x;
+#define devij int i = blockIdx.x, j = threadIdx.x + blockIdx.y * blockDim.x
 
 const float pi = 3.1415927;
 const int nbt = 2;
@@ -281,114 +281,113 @@ void copyMat(float **a, float **b, int nx, int nz){
     }
 }
 
-void divSY(float **out, float **sxy, float **szy, float dx, float dz, int nx, int nz, int order){
-    // order = 2: later
-    for(int i = 0; i < nx; i++){
-        for(int j = 0; j < nz; j++){
-            if(i >= 2 && i < nx - 2){
-                out[i][j] = 9*(sxy[i][j]-sxy[i-1][j])/(8*dx)-(sxy[i+1][j]-sxy[i-2][j])/(24*dx);
-            }
-            else{
-                out[i][j] = 0;
-            }
-            if(j >= 2 && j < nz - 2){
-                out[i][j] += 9*(szy[i][j]-szy[i][j-1])/(8*dz)-(szy[i][j+1]-szy[i][j-2])/(24*dz);
-            }
-        }
+__global__ void divSY(float **out, float **sxy, float **szy, float dx, float dz, int nx, int nz){
+    devij;
+    if(i >= 2 && i < nx - 2){
+        out[i][j] = 9*(sxy[i][j]-sxy[i-1][j])/(8*dx)-(sxy[i+1][j]-sxy[i-2][j])/(24*dx);
+    }
+    else{
+        out[i][j] = 0;
+    }
+    if(j >= 2 && j < nz - 2){
+        out[i][j] += 9*(szy[i][j]-szy[i][j-1])/(8*dz)-(szy[i][j+1]-szy[i][j-2])/(24*dz);
     }
 }
-void divSXZ(float **outx, float **outz, float **sxx, float **szz, float **sxz,
-    float dx, float dz, int nx, int nz, int order){
-    // order = 2: later
-    for(int i = 0; i < nx; i++){
-        for(int j = 0; j < nz; j++){
-            if(i >= 2 && i < nx - 2){
-                outx[i][j] = 9*(sxx[i][j]-sxx[i-1][j])/(8*dx)-(sxx[i+1][j]-sxx[i-2][j])/(24*dx);
-                outz[i][j] = 9*(sxz[i][j]-sxz[i-1][j])/(8*dx)-(sxz[i+1][j]-sxz[i-2][j])/(24*dx);
-            }
-            else{
-                outx[i][j] = 0;
-                outz[i][j] = 0;
-            }
-            if(j >= 2 && j < nz - 2){
-                outx[i][j] += 9*(sxz[i][j]-sxz[i][j-1])/(8*dz)-(sxz[i][j+1]-sxz[i][j-2])/(24*dz);
-                outz[i][j] += 9*(szz[i][j]-szz[i][j-1])/(8*dz)-(szz[i][j+1]-szz[i][j-2])/(24*dz);
-            }
-        }
+__global__ void divSXZ(float **outx, float **outz, float **sxx, float **szz, float **sxz, float dx, float dz, int nx, int nz){
+    devij;
+    if(i >= 2 && i < nx - 2){
+        outx[i][j] = 9*(sxx[i][j]-sxx[i-1][j])/(8*dx)-(sxx[i+1][j]-sxx[i-2][j])/(24*dx);
+        outz[i][j] = 9*(sxz[i][j]-sxz[i-1][j])/(8*dx)-(sxz[i+1][j]-sxz[i-2][j])/(24*dx);
+    }
+    else{
+        outx[i][j] = 0;
+        outz[i][j] = 0;
+    }
+    if(j >= 2 && j < nz - 2){
+        outx[i][j] += 9*(sxz[i][j]-sxz[i][j-1])/(8*dz)-(sxz[i][j+1]-sxz[i][j-2])/(24*dz);
+        outz[i][j] += 9*(szz[i][j]-szz[i][j-1])/(8*dz)-(szz[i][j+1]-szz[i][j-2])/(24*dz);
     }
 }
-void divVY(float **outx, float **outz, float **vy, float dx, float dz, int nx, int nz, int order){
-    for(int i = 0; i < nx; i++){
-        for(int j = 0; j < nz; j++){
-            if(i >= 1 && i < nx - 2){
-                outx[i][j] = 9*(vy[i+1][j]-vy[i][j])/(8*dx)-(vy[i+2][j]-vy[i-1][j])/(24*dx);
-            }
-            else{
-                outx[i][j] = 0;
-            }
-            if(j >= 1 && j < nz - 2){
-                outz[i][j] = 9*(vy[i][j+1]-vy[i][j])/(8*dz)-(vy[i][j+2]-vy[i][j-1])/(24*dz);
-            }
-            else{
-                outz[i][j] = 0;
-            }
-        }
+__global__ void divVY(float **outx, float **outz, float **vy, float dx, float dz, int nx, int nz){
+    devij;
+    if(i >= 1 && i < nx - 2){
+        outx[i][j] = 9*(vy[i+1][j]-vy[i][j])/(8*dx)-(vy[i+2][j]-vy[i-1][j])/(24*dx);
+    }
+    else{
+        outx[i][j] = 0;
+    }
+    if(j >= 1 && j < nz - 2){
+        outz[i][j] = 9*(vy[i][j+1]-vy[i][j])/(8*dz)-(vy[i][j+2]-vy[i][j-1])/(24*dz);
+    }
+    else{
+        outz[i][j] = 0;
     }
 }
-void divVXZ(float **outxx, float **outxz, float **outzx, float **outzz, float **vx, float **vz,
-    float dx, float dz, int nx, int nz, int order){
-    for(int i = 0; i < nx; i++){
-        for(int j = 0; j < nz; j++){
-            if(i >= 1 && i < nx - 2){
-                outxx[i][j] = 9*(vx[i+1][j]-vx[i][j])/(8*dx)-(vx[i+2][j]-vx[i-1][j])/(24*dx);
-                outzx[i][j] = 9*(vz[i+1][j]-vz[i][j])/(8*dx)-(vz[i+2][j]-vz[i-1][j])/(24*dx);
-            }
-            else{
-                outxx[i][j] = 0;
-                outzx[i][j] = 0;
-            }
-            if(j >= 1 && j < nz - 2){
-                outxz[i][j] = 9*(vx[i][j+1]-vx[i][j])/(8*dz)-(vx[i][j+2]-vx[i][j-1])/(24*dz);
-                outzz[i][j] = 9*(vz[i][j+1]-vz[i][j])/(8*dz)-(vz[i][j+2]-vz[i][j-1])/(24*dz);
-            }
-            else{
-                outxz[i][j] = 0;
-                outzz[i][j] = 0;
-            }
-        }
+__global__ void divVXZ(float **outxx, float **outxz, float **outzx, float **outzz, float **vx, float **vz, float dx, float dz, int nx, int nz){
+    devij;
+    if(i >= 1 && i < nx - 2){
+        outxx[i][j] = 9*(vx[i+1][j]-vx[i][j])/(8*dx)-(vx[i+2][j]-vx[i-1][j])/(24*dx);
+        outzx[i][j] = 9*(vz[i+1][j]-vz[i][j])/(8*dx)-(vz[i+2][j]-vz[i-1][j])/(24*dx);
+    }
+    else{
+        outxx[i][j] = 0;
+        outzx[i][j] = 0;
+    }
+    if(j >= 1 && j < nz - 2){
+        outxz[i][j] = 9*(vx[i][j+1]-vx[i][j])/(8*dz)-(vx[i][j+2]-vx[i][j-1])/(24*dz);
+        outzz[i][j] = 9*(vz[i][j+1]-vz[i][j])/(8*dz)-(vz[i][j+2]-vz[i][j-1])/(24*dz);
+    }
+    else{
+        outxz[i][j] = 0;
+        outzz[i][j] = 0;
     }
 }
-void updateV(float **v, float **ds, float **rho, float **absbound, float dt, int nx, int nz){
-    for(int i = 0; i < nx; i++){
-        for(int j = 0; j < nz; j++){
-            v[i][j] = absbound[i][j] * (v[i][j] + dt * ds[i][j] / rho[i][j]);
-        }
+
+__global__ void addSTF(float **dsx, float **dsy, float **dsz, float **stf_x, float **stf_y, float **stf_z,
+    int *src_x_id, int *src_z_id, int sh, int psv, int n){
+    int is = blockIdx.x;
+    int xs = src_x_id[is];
+    int zs = src_z_id[is];
+    if(sh){
+        dsy[xs][zs] += stf_y[is][n];
+    }
+    if(psv){
+        dsx[xs][zs] += stf_x[is][n];
+        dsz[xs][zs] += stf_z[is][n];
     }
 }
-void updateSY(float **sxy, float **szy, float **dvydx, float **dvydz, float **mu, float dt, int nx, int nz){
-    for(int i = 0; i < nx; i++){
-        for(int j = 0; j < nz; j++){
-            sxy[i][j] += dt * mu[i][j] * dvydx[i][j];
-            szy[i][j] += dt * mu[i][j] * dvydz[i][j];
-        }
+__global__ void saveV(float **v_rec_x, float **v_rec_y, float **v_rec_z, float **vx, float **vy, float **vz,
+    int *rec_x_id, int *rec_z_id, int sh, int psv, int n){
+    int ir = blockIdx.x;
+    int xr = rec_x_id[ir];
+    int zr = rec_z_id[ir];
+    if(sh){
+        v_rec_y[ir][n] = vy[xr][zr];
+    }
+    if(psv){
+        v_rec_x[ir][n] = vx[xr][zr];
+        v_rec_z[ir][n] = vz[xr][zr];
     }
 }
-void updateSXZ(float **sxx, float **szz, float **sxz, float **dvxdx, float **dvxdz, float **dvzdx, float **dvzdz,
-    float **lambda, float **mu, float dt, int nx, int nz){
-    for(int i = 0; i < nx; i++){
-        for(int j = 0; j < nz; j++){
-            sxx[i][j] += dt * ((lambda[i][j] + 2 * mu[i][j]) * dvxdx[i][j] + lambda[i][j] * dvzdz[i][j]);
-            szz[i][j] += dt * ((lambda[i][j] + 2 * mu[i][j]) * dvzdz[i][j] + lambda[i][j] * dvxdx[i][j]);
-            sxz[i][j] += dt * (mu[i][j] * (dvxdz[i][j] + dvzdx[i][j]));
-        }
-    }
+__global__ void updateV(float **v, float **ds, float **rho, float **absbound, float dt){
+    devij;
+    v[i][j] = absbound[i][j] * (v[i][j] + dt * ds[i][j] / rho[i][j]);
 }
-void updateU(float **u, float **v, float dt, int nx, int nz){
-    for(int i = 0; i < nx; i++){
-        for(int j = 0; j < nz; j++){
-            u[i][j] += v[i][j] * dt;
-        }
-    }
+__global__ void updateSY(float **sxy, float **szy, float **dvydx, float **dvydz, float **mu, float dt){
+    devij;
+    sxy[i][j] += dt * mu[i][j] * dvydx[i][j];
+    szy[i][j] += dt * mu[i][j] * dvydz[i][j];
+}
+__global__ void updateSXZ(float **sxx, float **szz, float **sxz, float **dvxdx, float **dvxdz, float **dvzdx, float **dvzdz,
+    float **lambda, float **mu, float dt){
+    devij;
+    sxx[i][j] += dt * ((lambda[i][j] + 2 * mu[i][j]) * dvxdx[i][j] + lambda[i][j] * dvzdz[i][j]);
+    szz[i][j] += dt * ((lambda[i][j] + 2 * mu[i][j]) * dvzdz[i][j] + lambda[i][j] * dvxdx[i][j]);
+    sxz[i][j] += dt * (mu[i][j] * (dvxdz[i][j] + dvzdx[i][j]));
+}
+__global__ void updateU(float **u, float **v, float dt){
+    devij;
+    u[i][j] += v[i][j] * dt;
 }
 
 __global__ void computeIndices(int *coord_n_id, float *coord_n, float Ln, float n){
@@ -424,6 +423,7 @@ __global__ void initialiseAbsorbingBoundaries(float **absbound, float width,
         }
     }
 }
+
 fdat *importData(void){
     fdat *dat = new fdat;
     FILE *datfile = fopen("externaltools/config","r");
@@ -462,7 +462,7 @@ fdat *importData(void){
             dat->use_given_model = root["use_given_model"];
             dat->use_given_stf = root["use_given_stf"];
             dat->source_amplitude = root["source_amplitude"];
-            dat->order = root["order"];
+            dat->order = root["order"]; // order = 2: later
 
             dat->absorb_left = root["absorb_left"];
             dat->absorb_right = root["absorb_right"];
@@ -683,7 +683,6 @@ void initialiseDynamicFields(fdat *dat){
 void runWaveFieldPropagation(fdat *dat){
     int sh = dat->wave_propagation_sh;
     int psv = dat->wave_propagation_psv;
-    int order = dat->order;
     int mode = dat->simulation_mode;
 
     int nx = dat->nx;
@@ -697,90 +696,76 @@ void runWaveFieldPropagation(fdat *dat){
     dim3 dimGrid(nx, nbt);
     dim3 dimBlock(nz / nbt);
     initialiseDynamicFields(dat);
-    initialiseAbsorbingBoundaries<<<dimGrid, dimBlock>>>(
-        dat->absbound, dat->absorb_width,
-        dat->absorb_left, dat->absorb_right, dat->absorb_bottom, dat->absorb_top,
-        dat->Lx, dat->Lz, dx, dz
-    );
 
-    // for(int n = 0; n < dat->nt; n++){
-    //     if((n + 1) % dat->sfe == 0){
-    //         int isfe = (int)(nt / dat->sfe) - (n + 1) / dat->sfe;
-    //         if(sh){
-    //             mat::copyDeviceToHost(dat->uy_forward[isfe], dat->uy, nx, nz);
-    //         }
-    //         if(psv){
-    //             mat::copyDeviceToHost(dat->ux_forward[isfe], dat->ux, nx, nz);
-    //             mat::copyDeviceToHost(dat->uz_forward[isfe], dat->uz, nx, nz);
-    //         }
-    //     }
-    //     if(sh){
-    //         divSY(dat->dsy, dat->sxy, dat->szy, dx, dz, nx, nz, order);
-    //     }
-    //     if(psv){
-    //         divSXZ(dat->dsx, dat->dsz, dat->sxx, dat->szz, dat->sxz, dx, dz, nx, nz, order);
-    //     }
-    //     if(mode == 0 || mode == 1){
-    //         for(int is = 0; is < dat->nsrc; is++){
-    //             int xs = dat->src_x_id[is];
-    //             int zs = dat->src_z_id[is];
-    //             if(sh){
-    //                 dat->dsy[xs][zs] += dat->stf_y[is][n];
-    //             }
-    //             if(psv){
-    //                 dat->dsx[xs][zs] += dat->stf_x[is][n];
-    //                 dat->dsz[xs][zs] += dat->stf_z[is][n];
-    //             }
-    //         }
-    //     }
-    //     if(sh){
-    //         updateV(dat->vy, dat->dsy, dat->rho, dat->absbound, dt, nx, nz);
-    //         divVY(dat->dvydx, dat->dvydz, dat->vy, dx, dz, nx, nz, dat->order);
-    //         updateSY(dat->sxy, dat->szy, dat->dvydx, dat->dvydz, dat->mu, dt, nx, nz);
-    //         updateU(dat->uy, dat->vy, nx, nz, dt);
-    //     }
-    //     if(psv){
-    //         updateV(dat->vx, dat->dsx, dat->rho, dat->absbound, dt, nx, nz);
-    //         updateV(dat->vz, dat->dsz, dat->rho, dat->absbound, dt, nx, nz);
-    //         divVXZ(dat->dvxdx, dat->dvxdz, dat->dvzdx, dat->dvzdz, dat->vx, dat->vz, dx, dz, nx, nz, order);
-    //         updateSXZ(dat->sxx, dat->szz, dat->sxz, dat->dvxdx, dat->dvxdz, dat->dvzdx, dat->dvzdz, dat->lambda, dat->mu, dt, nx, nz);
-    //         updateU(dat->ux, dat->vx, dt, nx, nz);
-    //         updateU(dat->uz, dat->vz, dt, nx, nz);
-    //     }
-    //     if(mode == 0){
-    //         for(int ir = 0; ir < dat->nrec; ir++){
-    //             int xr = dat->rec_x_id[ir];
-    //             int zr = dat->rec_z_id[ir];
-    //             if(sh){
-    //                 dat->v_rec_y[ir][n] = dat->vy[xr][zr];
-    //             }
-    //             if(psv){
-    //                 dat->v_rec_x[ir][n] = dat->vx[xr][zr];
-    //                 dat->v_rec_z[ir][n] = dat->vz[xr][zr];
-    //             }
-    //         }
-    //         if((n + 1) % dat->sfe == 0){
-    //             int isfe = (int)(nt / dat->sfe) - (n + 1) / dat->sfe;
-    //             if(sh){
-    //                 copyMat(dat->vy_forward[isfe], dat->vy, nx, nz);
-    //             }
-    //             if(psv){
-    //                 copyMat(dat->vx_forward[isfe], dat->vx, nx, nz);
-    //                 copyMat(dat->vz_forward[isfe], dat->vz, nx, nz);
-    //             }
-    //         }
-    //     }
-    //     else if(mode == 1){
-    //         // adjoint: later
-    //     }
-    // }
-    // char oname[50];
-    // for(int i = 0; i < dat->nrec; i++){
-    //     sprintf(oname, "vx%d", i);
-    //     mat::write(dat->v_rec_x[i], nt, oname);
-    //     sprintf(oname, "vz%d", i);
-    //     mat::write(dat->v_rec_z[i], nt, oname);
-    // }
+    for(int n = 0; n < dat->nt; n++){
+        if((n + 1) % dat->sfe == 0){
+            int isfe = (int)(nt / dat->sfe) - (n + 1) / dat->sfe;
+            if(sh){
+                mat::copyDeviceToHost(dat->uy_forward[isfe], dat->uy, nx, nz);
+            }
+            if(psv){
+                mat::copyDeviceToHost(dat->ux_forward[isfe], dat->ux, nx, nz);
+                mat::copyDeviceToHost(dat->uz_forward[isfe], dat->uz, nx, nz);
+            }
+        }
+        if(sh){
+            divSY<<<dimGrid, dimBlock>>>(dat->dsy, dat->sxy, dat->szy, dx, dz, nx, nz);
+        }
+        if(psv){
+            divSXZ<<<dimGrid, dimBlock>>>(dat->dsx, dat->dsz, dat->sxx, dat->szz, dat->sxz, dx, dz, nx, nz);
+        }
+        if(mode == 0 || mode == 1){
+            addSTF<<<dat->nsrc, 1>>>(
+                dat->dsx, dat->dsy, dat->dsz, dat->stf_x, dat->stf_y, dat->stf_z,
+                dat->src_x_id, dat->src_z_id, dat->wave_propagation_sh, dat->wave_propagation_psv, n
+            );
+        }
+        if(sh){
+            updateV<<<dimGrid, dimBlock>>>(dat->vy, dat->dsy, dat->rho, dat->absbound, dt);
+            divVY<<<dimGrid, dimBlock>>>(dat->dvydx, dat->dvydz, dat->vy, dx, dz, nx, nz);
+            updateSY<<<dimGrid, dimBlock>>>(dat->sxy, dat->szy, dat->dvydx, dat->dvydz, dat->mu, dt);
+            updateU<<<dimGrid, dimBlock>>>(dat->uy, dat->vy, dt);
+        }
+        if(psv){
+            updateV<<<dimGrid, dimBlock>>>(dat->vx, dat->dsx, dat->rho, dat->absbound, dt);
+            updateV<<<dimGrid, dimBlock>>>(dat->vz, dat->dsz, dat->rho, dat->absbound, dt);
+            divVXZ<<<dimGrid, dimBlock>>>(dat->dvxdx, dat->dvxdz, dat->dvzdx, dat->dvzdz, dat->vx, dat->vz, dx, dz, nx, nz);
+            updateSXZ<<<dimGrid, dimBlock>>>(dat->sxx, dat->szz, dat->sxz, dat->dvxdx, dat->dvxdz, dat->dvzdx, dat->dvzdz, dat->lambda, dat->mu, dt);
+            updateU<<<dimGrid, dimBlock>>>(dat->ux, dat->vx, dt);
+            updateU<<<dimGrid, dimBlock>>>(dat->uz, dat->vz, dt);
+        }
+        if(mode == 0){
+            saveV<<<dat->nrec, 1>>>(
+                dat->v_rec_x, dat->v_rec_y, dat->v_rec_z, dat->vx, dat->vy, dat->vz,
+                dat->rec_x_id, dat->rec_z_id, dat->wave_propagation_sh, dat->wave_propagation_psv, n
+            );
+            if((n + 1) % dat->sfe == 0){
+                int isfe = (int)(nt / dat->sfe) - (n + 1) / dat->sfe;
+                if(sh){
+                    mat::copyDeviceToHost(dat->vy_forward[isfe], dat->vy, nx, nz);
+                }
+                if(psv){
+                    mat::copyDeviceToHost(dat->vx_forward[isfe], dat->vx, nx, nz);
+                    mat::copyDeviceToHost(dat->vz_forward[isfe], dat->vz, nx, nz);
+                }
+            }
+        }
+        else if(mode == 1){
+            // adjoint: later
+        }
+    }
+
+    char oname[50];
+    float **v_rec_x = mat::createHost(dat->nrec, nt);
+    float **v_rec_z = mat::createHost(dat->nrec, nt);
+    mat::copyDeviceToHost(v_rec_x, dat->v_rec_x, nx, nz);
+    mat::copyDeviceToHost(v_rec_z, dat->v_rec_z, nx, nz);
+    for(int i = 0; i < dat->nrec; i++){
+        sprintf(oname, "vx%d", i);
+        mat::write(v_rec_x[i], nt, oname);
+        sprintf(oname, "vz%d", i);
+        mat::write(v_rec_z[i], nt, oname);
+    }
 }
 void checkArgs(fdat *dat){
     int nx = dat->nx;
@@ -857,6 +842,14 @@ void checkArgs(fdat *dat){
     computeIndices<<<dat->nsrc, 1>>>(dat->src_z_id, dat->src_z, dat->Lz, dat->nz);
     computeIndices<<<dat->nrec, 1>>>(dat->rec_x_id, dat->rec_x, dat->Lx, dat->nx);
     computeIndices<<<dat->nrec, 1>>>(dat->rec_z_id, dat->rec_z, dat->Lz, dat->nz);
+
+    dim3 dimGrid(nx, nbt);
+    dim3 dimBlock(nz / nbt);
+    initialiseAbsorbingBoundaries<<<dimGrid, dimBlock>>>(
+        dat->absbound, dat->absorb_width,
+        dat->absorb_left, dat->absorb_right, dat->absorb_bottom, dat->absorb_top,
+        dat->Lx, dat->Lz, dat->dx, dat->dz
+    );
 
     float *t = mat::createHost(dat->nt);
     for(int i = 0; i < dat->nt; i++){
