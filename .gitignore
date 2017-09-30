@@ -1,4 +1,5 @@
 *.[oa]
 *~
 ./debugging/
+output/
 *.exe

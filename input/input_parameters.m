@@ -166,8 +166,8 @@ model_type=10; %(start)
 % src_z = src_info.loc_z;
 
 % 4 src @ centre depth
-nsrc = 4;
-src_x= (1: 1: nsrc) * (Lx/(nsrc+1));
+nsrc = 1;
+src_x= (1: 1: nsrc) * (Lx/(nsrc+1.7));
 src_z=ones(size(src_x)) * (Lz / 2);
 for ii = 1:nsrc
     src_info(ii).loc_x = src_x(ii);
@@ -253,8 +253,8 @@ change_freq_every = 1;          % how many iterations with the same freq?
 
 % 3 receivers
 nrec = 3;
-rec_x = (1: 1: nrec) * (Lx/(nrec+1));
-rec_z = (1: 1: nrec) * (Lz/(nrec+1));
+rec_x = (2: 1: nrec + 1) * (Lx/(nrec+3));
+rec_z = (2: 1: nrec + 1) * (Lz/(nrec+3));
 
 % nsrc = 4;
 % rec_x= (1: 1: nsrc) * (Lx/(nsrc+1));
@@ -306,7 +306,7 @@ absorb_bottom=1;% absorb waves on the bottom boundary
 
 % plot every 'plot every'th image (otherwise computationally rather heavy)
 % plot_every=nt*2; % value larger than nt, so that no plotting takes place
-plot_every = 0;
+plot_every = 200;
 
 plot_forward_frames='PSV';   % 'X-Y-Z' or 'X-Y' or 'PSV-SH' or 'PSV'
                              % which frames should be plotted in the forward calculation

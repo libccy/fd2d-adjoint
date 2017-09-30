@@ -105,8 +105,8 @@ if istart == 1
     figname = [output_path,'/iter0.starting-model.',param_plot,'.png'];
     print(fig_mod,'-dpng','-r400',figname);
     close(fig_mod);
-    
-    
+
+
     % if 1st iter model @ matfile, load matfile
     if strcmp(use_matfile_startingmodel,'yes')
         load(starting_model)
@@ -115,7 +115,7 @@ if istart == 1
     else
         Model(1) = Model_start;
     end
-    
+
     % apply hard constraints to initial model (if applicable)
     if(strcmp(apply_hc,'yes'))
         % -> no negative velocities
@@ -141,9 +141,9 @@ if istart == 1
         clearvars fig_rhoupdate
     else
         %             disp 'model 1 is model start'
-        
+
     end
-    
+
 end
 
 %% load initial model misfit
@@ -164,7 +164,7 @@ end
 for iter = istart : InvProps.niter;
 %   if i > 1
 %         cd ../code;
-        
+
         disp  ' ';
         disp  ' ';
         disp  ' ';
@@ -173,11 +173,11 @@ for iter = istart : InvProps.niter;
         disp(['STARTING ITER ', num2str(iter), ' OUT OF ', num2str(InvProps.niter)]);
         disp '======================================';
         disp ' ';
-        
- 
-        
+
+
+
         %% MODEL
-        
+
         % plot model
 %         fig_mod = plot_model(Model(iter),middle,param_plot);
 %         titel = [project_name,': model of iter ', num2str(iter)];
@@ -193,7 +193,7 @@ for iter = istart : InvProps.niter;
         print(fig_mod,'-dpng','-r400',figname);
         close(fig_mod);
         clearvars('fig_mod');
-        
+
         %% get current frequency and its source & obs info
 
         cfe = change_freq_every;
@@ -203,18 +203,18 @@ for iter = istart : InvProps.niter;
         end
         freqmax(iter) = sObsPerFreq(whichFrq).f_max;
         freqmin(iter) = sObsPerFreq(whichFrq).f_min;
-        
+
         nsrc = length(sObsPerFreq(whichFrq).sEventObs);
-        
+
         % event info = source locations & (unfiltered) stf
         % event obs = observed seismograms per source per receiver
         sEventInfo = sObsPerFreq(whichFrq).sEventInfo; % contains src locations etc
         sEventObs = sObsPerFreq(whichFrq).sEventObs;  % contains v_obs
- 
-        
+
+
         %% misfit
-        
-        
+
+
         % initial misfit  ---  actually this should only be done if iter>1
         if iter >1
             if(~exist('misfit_init', 'var') || length(misfit_init) < whichFrq || isempty(misfit_init(whichFrq).total) )
@@ -232,7 +232,7 @@ for iter = istart : InvProps.niter;
             misfit_init(whichFrq).seis = 0;
             misfit_init(whichFrq).grav = 0;
         end
-        
+
         % current misfit
         disp(['calculating current misfit for iter ',num2str(iter)]);
 
@@ -259,8 +259,8 @@ for iter = istart : InvProps.niter;
         g(iter) = giter;
         sEventRec{iter} = sEventRecIter;
         sEventAdstf{iter} = sEventAdstfIter;
-        
-        
+
+
         % display misfits
         disp ' ';
         disp(['GRAVITY misfit FOR ITER ',num2str(iter,'%2u'),':   ', ...
@@ -277,7 +277,7 @@ for iter = istart : InvProps.niter;
             num2str(InvProps.misfit(iter),'%3.2e'), ...
             ' (',num2str(InvProps.misfit(iter)/InvProps.misfit(1)*100,'%g'),'%)'])
         disp '=========================================='
-        
+
 
 
         % plot misfit evolution
@@ -288,11 +288,11 @@ for iter = istart : InvProps.niter;
         close(fig_misfit);
         clearvars fig_misfit
 
-        
+
         %% GRAVITY KERNEL
-        
+
         if strcmp(use_grav,'yes')
-            
+
             % kernels only to be calculated when a next iteration will take place.
             if(iter < InvProps.niter)
                 %- calculate gravity kernels
@@ -305,13 +305,13 @@ for iter = istart : InvProps.niter;
 %                 else
 %                     [Kg_temp, fig_Kg] = compute_kernels_gravity(g_src,rec_g,'no'); % 'no' is for plotting gravity kernel update
 %                 end
-                
+
                 % normalising the gravity kernel
                 Kg{iter} = norm_kernel(Kg_temp, normalise_misfits, ...
                     misfit_init(whichFrq).grav);
                 clearvars Kg_temp;
-                
-                
+
+
                 %  plot gravity kernel
                 fig_Kg = plot_gravity_kernel(Kg{iter});
                 figname = [output_path,'/iter',num2str(iter,'%03d'),'.kernel_grav.rho.png'];
@@ -322,31 +322,31 @@ for iter = istart : InvProps.niter;
                 clearvars fig_Kg;
             end
         end
-        
-        
+
+
         %% SEISMIC KERNEL
-        
+
         if(iter < InvProps.niter) % kernels only to be calculated when a next iteration will take place.
 
-            
+
             % run adjoint to obtain seismic kernels
             disp ' ';
             disp(['iter ',num2str(iter),': calculating seismic kernels']);
             [Kseis_temp, sEventKnls_iter] = run_adjoint_persource(Model(iter), sEventAdstf{iter});
-            
+
             % save event kernels to a matfile
             save([output_path,'iter',num2str(iter),'.sEventKnls.mat'], 'sEventKnls_iter');
-            
+
             % normalise kernels
             Kseis(iter) = norm_kernel(Kseis_temp, normalise_misfits, ...
                 misfit_init(whichFrq).seis);
 %             clearvars Kseis_temp;
-            
+
             % plot the kernels
             disp ' ';
             disp(['iter ',num2str(iter),': plotting kernels']);
 %             cd ../tools/
-            
+
             % absolute rho-mu-lambda
             fig_knl = plot_kernels(Kseis(iter), 'rhomulambda',Model(iter), 'total', 'own', 99.95);
             titel = [project_name,' - iter ',num2str(iter), ' seismic kernels (abs rho-mu-lambda)'];
@@ -354,12 +354,12 @@ for iter = istart : InvProps.niter;
             figname = [output_path,'/iter',num2str(iter,'%03d'),'.kernels.abs.rho-mu-lambda.png'];
             print(fig_knl,'-dpng','-r400',figname); close(fig_knl);
             % absolute rho-vs-vp
-            fig_knl = plot_kernels(Kseis(iter), 'rhovsvp',Model(iter), 'total', 'own', 99.95);
-            titel = [project_name, ' - iter ',num2str(iter), ' seismic kernels (abs rho-vs-vp)'];
-            mtit(fig_knl,titel, 'xoff', 0.001, 'yoff', 0.04);
-            figname = [output_path,'/iter',num2str(iter,'%03d'),'.kernels.abs.rho-vs-vp.png'];
-            print(fig_knl,'-dpng','-r400',figname); close(fig_knl);
-            
+%             fig_knl = plot_kernels(Kseis(iter), 'rhovsvp',Model(iter), 'total', 'own', 99.95);
+%             titel = [project_name, ' - iter ',num2str(iter), ' seismic kernels (abs rho-vs-vp)'];
+%             mtit(fig_knl,titel, 'xoff', 0.001, 'yoff', 0.04);
+%             figname = [output_path,'/iter',num2str(iter,'%03d'),'.kernels.abs.rho-vs-vp.png'];
+%             print(fig_knl,'-dpng','-r400',figname); close(fig_knl);
+
 %             % plot subkernels
 %             for isrc = 1:numel(sEventKnls{iter})
 %                 Kernel = sEventKnls{iter}(isrc);
@@ -379,12 +379,12 @@ for iter = istart : InvProps.niter;
 
         end
 %         clearvars K_reltemp fig_knl;
-        
-    
-    
+
+
+
     %% COMBINE KERNELS
-    
-    
+
+
     % only update the model if we're going to a next model
     if (iter<InvProps.niter)
 %    if i>1
@@ -393,7 +393,7 @@ for iter = istart : InvProps.niter;
             % determine weight of relative kernels
             w_Kseis = 1;
             w_Kg = 1;
-            
+
             disp ' ';
             disp '---'
             disp(['seismic kernel 98th prctile:        ',num2str(prctile(abs(Kseis(iter).rho.total(:)),98))]);
@@ -408,10 +408,10 @@ for iter = istart : InvProps.niter;
             disp(['the ratio of seis and grav kernel norms:         ',num2str(InvProps.verhouding(iter),'%3.2e')]);
 %             disp(['the ratio of grav and seis weights:              ',num2str(w_Kg/w_Kseis,'%3.2e')]);
             disp '---'
-            
+
             % combine seismic and gravity kernels
             disp ' '; disp(['iter ',num2str(iter),': combining gravity and seismic kernels']);
-            
+
             % Below is utter BULLSHIT.
             % the gravity kernel doesn't say anything about mu and lambda
             % either. What does count, is the parametrisation in which the
@@ -437,7 +437,7 @@ for iter = istart : InvProps.niter;
                     error('the parametrisation in which kernels are added was unknown');
             end
 
-            
+
             % saving the total kernel
             Ktest1 = change_parametrisation_kernels(parametrisation,'rhomulambda', Ktest,Model(iter));
             K_total(iter).rho.total    = Ktest1.rho.total;
@@ -447,14 +447,14 @@ for iter = istart : InvProps.niter;
         else
             K_total(iter) = Kseis(iter);
         end
-        
+
        % plotting the total kernel in (absolute) rhovsvp
-       fig_knl = plot_kernels(K_total(iter), 'rhovsvp',Model(iter), 'total', 'own', 99.95);
-       titel = [project_name,' - TOTAL kernels (absolute rho-vs-vp) for iter ',num2str(iter)];
-       mtit(fig_knl,titel, 'xoff', 0.001, 'yoff', 0.04);
-       figname = [output_path,'/iter',num2str(iter,'%03d'),'.kernels-total.abs.rho-vs-vp.png'];
-       print(fig_knl,'-dpng','-r400',figname); close(fig_knl);
-       
+    %    fig_knl = plot_kernels(K_total(iter), 'rhovsvp',Model(iter), 'total', 'own', 99.95);
+    %    titel = [project_name,' - TOTAL kernels (absolute rho-vs-vp) for iter ',num2str(iter)];
+    %    mtit(fig_knl,titel, 'xoff', 0.001, 'yoff', 0.04);
+    %    figname = [output_path,'/iter',num2str(iter,'%03d'),'.kernels-total.abs.rho-vs-vp.png'];
+    %    print(fig_knl,'-dpng','-r400',figname); close(fig_knl);
+
        % plotting the density kernels seis + grav = total
        if strcmp(use_grav, 'yes')
            fig_Krho = plot_model(Krho);
@@ -480,7 +480,7 @@ for iter = istart : InvProps.niter;
         if iter==1; stapje = InvProps.stepInit;
         elseif iter>1; stapje = InvProps.step(iter-1);
         end
-        
+
         % actual step length calculation
         [step, fig_lnsrch, steplnArray, misfitArray] = ...
                 calculate_step_length(stapje,iter, ...
@@ -504,8 +504,8 @@ for iter = istart : InvProps.niter;
         disp(['iter ',num2str(iter),': updating model']);
         Model_prehc = update_model(K_total(iter),InvProps.step(iter),Model(iter),parametrisation);
 
-        
-        
+
+
         %% HARD CONSTRAINTS
         % apply hard constraints
         if(strcmp(apply_hc,'yes'))
@@ -535,9 +535,9 @@ for iter = istart : InvProps.niter;
         else
             Model_prevfix = Model_prehc;
         end
-        
-        
-        
+
+
+
         if(strcmp(fix_velocities,'yes'))
             Model(iter+1) = fix_vs_vp(Model_prevfix, Model_start);
         else
@@ -546,9 +546,9 @@ for iter = istart : InvProps.niter;
 %         clearvars Model_prevfix Model_prehc;
 
     end
-    
+
     %% OUTPUT:
-    
+
 
     % useful output
     if strcmp(use_grav,'no')
@@ -567,7 +567,7 @@ for iter = istart : InvProps.niter;
         print(fig_inv2,'-dpng','-r400',[figname,'.png']);
         print(fig_inv2,'-depsc','-r400',[figname,'.eps']);
         close(fig_inv2)
-        
+
         fig_invres = plot_inversion_result(InvProps, iter);
         titel = [project_name,': inversion results'];
         mtit(fig_invres,titel, 'xoff', 0.0000001, 'yoff', 0.03);
@@ -576,8 +576,8 @@ for iter = istart : InvProps.niter;
         print(fig_invres,'-depsc','-r400',[figname,'.eps']);
         close(fig_invres)
     end
-    
-    
+
+
     % save all output files to the actual output path
     blips = dir('./output/*iter.current*');
     for ii = 1:numel(blips)
@@ -586,7 +586,7 @@ for iter = istart : InvProps.niter;
         newfile = [output_path,strrep(blips(ii).name,'iter.current',['iter',num2str(iter,'%03d')])];
         movefile(oldfile,newfile);
     end
-    
+
     %% safety
     % saving current variables to file (crash safeguard)
 
@@ -602,10 +602,10 @@ for iter = istart : InvProps.niter;
     % saving initial misfit file
     save(init_misfit_file, 'misfit_init', '-v6');
 
-    
+
     %% clean up
     rmdir([output_path,'/fwd_temp'], 's');
-    
+
 end
 
 
@@ -622,15 +622,15 @@ disp '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~';
 disp '======================================';
 disp '|         ...FINISHING UP...         |';
 
-fig_end = plot_model_diff(Model(niter), Model_bg, 'rhovsvp');
+fig_end = plot_model_diff(Model(niter), Model_bg, param_plot);
 % blips = findobj(fig_Krho, 'type', 'axes');
 % for ii = 1:3
 %     blips(ii).CLim =  [-maks maks];
 % end
 % % clim_rounded = 10*round(fig_end.Children(6).CLim(2) / 10);
-% % for ii = 2:2:6; 
+% % for ii = 2:2:6;
 % % %     clim_rounded = 10*round(fig_end.Children(6).CLim(2) / 10);
-% %     fig_end.Children(ii).CLim = [-clim_rounded clim_rounded]; 
+% %     fig_end.Children(ii).CLim = [-clim_rounded clim_rounded];
 % % end
 titel = [project_name, ' - Final - background model'];
 mtit(fig_end, titel); %, 'xoff', 0.001, 'yoff', 0.02);
