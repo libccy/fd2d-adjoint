@@ -242,6 +242,14 @@ namespace mat{
         }
     }
 
+    void freeMat(float *mat){
+        free(mat);
+    }
+    void freeMat(float **mat){
+        free(*mat);
+        free(mat);
+    }
+
     void read(float *data, int len, char *fname){
         char buffer[50] = "externaltools/";
         strcat(buffer, fname);
@@ -556,8 +564,8 @@ fdat *importData(void){
                 mat::copyHostToDevice(dat->src_x, src_x, dat->nsrc);
                 mat::copyHostToDevice(dat->src_z, src_z, dat->nsrc);
 
-                free(src_x);
-                free(src_z);
+                mat::freeMat(src_x);
+                mat::freeMat(src_z);
             }
 
             {
@@ -578,8 +586,8 @@ fdat *importData(void){
                 mat::copyHostToDevice(dat->rec_x, rec_x, dat->nrec);
                 mat::copyHostToDevice(dat->rec_z, rec_z, dat->nrec);
 
-                free(rec_x);
-                free(rec_z);
+                mat::freeMat(rec_x);
+                mat::freeMat(rec_z);
             }
         }
         jsonBuffer.clear();
@@ -633,13 +641,10 @@ void prepareSTF(fdat *dat){
     mat::copyHostToDevice(dat->stf_y, stf_y, dat->nsrc, dat->nt);
     mat::copyHostToDevice(dat->stf_z, stf_z, dat->nsrc, dat->nt);
 
-    free(*stf_x);
-    free(*stf_y);
-    free(*stf_z);
-    free(stf_x);
-    free(stf_y);
-    free(stf_z);
-    free(stfn);
+    mat::freeMat(stf_x);
+    mat::freeMat(stf_y);
+    mat::freeMat(stf_z);
+    mat::freeMat(stfn);
 }
 void defineMaterialParameters(fdat *dat){
     // other model_type: later
@@ -657,6 +662,30 @@ void defineMaterialParameters(fdat *dat){
             mat::init(dat->mu, nx, nz, 2.66e10);
             mat::init(dat->lambda, nx, nz, 3.42e10);
             break;
+        }
+        case 13:{
+            mat::init(dat->mu, nx, nz, 2.66e10);
+            mat::init(dat->lambda, nx, nz, 3.42e10);
+
+            float rho = 2600;
+            float mu = 2.66e10;
+            float lambda = 3.42e10;
+            float vp = sqrt((lambda + 2*mu) / rho);
+            float vs = sqrt(mu / rho);
+            int left = (int)((float)nx / 2 - (float)nx / 20 + 0.5);
+            int right = (int)((float)nx / 2 + (float)nx / 20 + 0.5);
+            int bottom = (int)((float)nz / 2 - (float)nz / 20 + 0.5);
+            int top = (int)((float)nz / 2 + (float)nz / 20 + 0.5);
+
+            float **rho2 = mat::createHost(nx, nz);
+            mat::initHost(rho2, nx, nz, 2600);
+            for(int i = left; i < right; i++){
+                for(int j = bottom; j < top; j++){
+                    rho2[i][j] = 3600;
+                }
+            }
+            mat::copyHostToDevice(dat->rho, rho2, nx, nz);
+            mat::freeMat(rho2);
         }
     }
 }
