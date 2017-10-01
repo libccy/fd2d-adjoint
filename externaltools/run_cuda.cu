@@ -888,11 +888,23 @@ void runForward(fdat *dat){
         mat::write(v_rec_z[i], dat->nt, oname);
     }
 }
+void inversionRoutine(fdat *dat){
+
+}
 
 int main(int argc , char *argv[]){
     fdat *dat = importData();
     checkArgs(dat);
-    runForward(dat);
+    if(argc == 0){
+        inversionRoutine(dat);
+    }
+    else{
+        for(int i = 0; i< argc; i++){
+            if(strcmp(argv[i],"runForward") == 0){
+                runForward(dat);
+            }
+        }
+    }
 
     return 0;
 }
