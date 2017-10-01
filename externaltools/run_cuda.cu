@@ -892,11 +892,7 @@ void runForward(fdat *dat){
 int main(int argc , char *argv[]){
     fdat *dat = importData();
     checkArgs(dat);
-    for(int i = 0; i< argc; i++){
-        if(strcmp(argv[i],"runForward") == 0){
-            runForward(dat);
-        }
-    }
+    runForward(dat);
 
     return 0;
 }
