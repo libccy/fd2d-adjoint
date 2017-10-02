@@ -28,7 +28,6 @@ function [] = export_data(key, value)
         data.rec_z = rec_z;
         data.source_amplitude = source_amplitude;
         data.wave_propagation_type = wave_propagation_type;
-        data.simulation_mode = simulation_mode;
         
         data.width = width;
         data.absorb_left = absorb_left;

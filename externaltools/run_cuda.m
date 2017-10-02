@@ -4,7 +4,10 @@ function varargout = run_cuda(varargin)
     end
     export_data;
     
+    tic;
     system('externaltools\\run_cuda.exe');
+    toc;
+    
     n = length(varargin);
     varargout = cell(1,n);
     for i = 1:n
