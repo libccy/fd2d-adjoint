@@ -90,6 +90,20 @@ typedef struct{
     float **dvzdx;
     float **dvzdz;
 
+    float **dvxdx_fw;
+    float **dvxdz_fw;
+    float **dvydx_fw;
+    float **dvydz_fw;
+    float **dvzdx_fw;
+    float **dvzdz_fw;
+
+    float **interactio_lambda;
+    float **interaction_mu;
+    float **interation_rho;
+    float **K_lambda;
+    float **K_mu;
+    float **K_rho;
+
     float **v_rec_x;
     float **v_rec_y;
     float **v_rec_z;
@@ -798,11 +812,12 @@ void runWaveFieldPropagation(fdat *dat){
                         divVXZ<<<dimGrid, dimBlock>>>(dat->dvxdx, dat->dvxdz, dat->dvzdx, dat->dvzdz, dat->ux, dat->uz, dx, dz, nx, nz);
                     }
                 }
+                break;
             }
         }
     }
 }
-void checkArgs(fdat *dat){
+void checkArgs(fdat *dat, int adjoint){
     int &nx = dat->nx;
     int &nz = dat->nz;
 
@@ -821,6 +836,11 @@ void checkArgs(fdat *dat){
         dat->dsy = mat::create(nx, nz);
         dat->dvydx = mat::create(nx, nz);
         dat->dvydz = mat::create(nx, nz);
+
+        if(adjoint == 1){
+            dat->dvydx_fw = mat::create(nx, nz); //change to dat->dsx: later
+            dat->dvydz_fw = mat::create(nx, nz);
+        }
 
         dat->v_rec_y = mat::create(dat->nrec, dat->nt);
         dat->uy_forward = mat::createHost(dat->nsfe, nx, nz);
@@ -841,6 +861,13 @@ void checkArgs(fdat *dat){
         dat->dvzdx = mat::create(nx, nz);
         dat->dvzdz = mat::create(nx, nz);
 
+        if(adjoint == 1){
+            dat->dvxdx_fw = mat::create(nx, nz); //change to dat->dsx: later
+            dat->dvxdz_fw = mat::create(nx, nz);
+            dat->dvzdx_fw = mat::create(nx, nz);
+            dat->dvzdz_fw = mat::create(nx, nz);
+        }
+
         dat->v_rec_x = mat::create(dat->nrec, dat->nt);
         dat->v_rec_z = mat::create(dat->nrec, dat->nt);
         dat->ux_forward = mat::createHost(dat->nsfe, nx, nz);
@@ -853,6 +880,15 @@ void checkArgs(fdat *dat){
     dat->lambda = mat::create(nx, nz);
     dat->rho = mat::create(nx, nz);
     dat->mu = mat::create(nx, nz);
+
+    if(adjoint == 1){
+        dat->interactio_lambda = mat::create(nx, nz);
+        dat->interaction_mu = mat::create(nx, nz);
+        dat->interation_rho = mat::create(nx, nz);
+        dat->K_lambda = mat::create(nx, nz);
+        dat->K_mu = mat::create(nx, nz);
+        dat->K_rho = mat::create(nx, nz);
+    }
 
     dat->stf_x = mat::create(dat->nsrc, dat->nt);
     dat->stf_y = mat::create(dat->nsrc, dat->nt);
@@ -921,7 +957,7 @@ void inversionRoutine(fdat *dat){
 
 int main(int argc , char *argv[]){
     fdat *dat = importData();
-    checkArgs(dat);
+    checkArgs(dat, 1);
     if(argc == 1){
         runForward(dat);
         // runAdjoint(dat);
@@ -932,6 +968,16 @@ int main(int argc , char *argv[]){
                 runForward(dat);
             }
         }
+    }
+    {
+        size_t free_byte ;
+        size_t total_byte ;
+        cudaMemGetInfo( &free_byte, &total_byte ) ;
+        float free_db = (float)free_byte ;
+        float total_db = (float)total_byte ;
+        float used_db = total_db - free_db ;
+
+        printf("memory usage: %.1fMB / %.1fMB\n", used_db / 1024.0 / 1024.0, total_db / 1024.0 / 1024.0);
     }
 
     return 0;

@@ -8,8 +8,8 @@ function [] = animate_output(v_fw)
     figure(fig_vel)
 
     for n = 1:nsfe
-        vx = reshape(v_fw.x(nsfe-n+1,:,:),nx,nz);
-        vz = reshape(v_fw.z(nsfe-n+1,:,:),nx,nz);
+        vx = squeeze(v_fw.x(nsfe-n+1,:,:));
+        vz = squeeze(v_fw.z(nsfe-n+1,:,:));
         plot_velocity_field;
     end
 end
