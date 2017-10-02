@@ -305,65 +305,65 @@ void copyMat(float **a, float **b, int nx, int nz){
     }
 }
 
-__global__ void divSY(float **out, float **sxy, float **szy, float dx, float dz, int nx, int nz){
+__global__ void divSY(float **dsy, float **sxy, float **szy, float dx, float dz, int nx, int nz){
     devij;
     if(i >= 2 && i < nx - 2){
-        out[i][j] = 9*(sxy[i][j]-sxy[i-1][j])/(8*dx)-(sxy[i+1][j]-sxy[i-2][j])/(24*dx);
+        dsy[i][j] = 9*(sxy[i][j]-sxy[i-1][j])/(8*dx)-(sxy[i+1][j]-sxy[i-2][j])/(24*dx);
     }
     else{
-        out[i][j] = 0;
+        dsy[i][j] = 0;
     }
     if(j >= 2 && j < nz - 2){
-        out[i][j] += 9*(szy[i][j]-szy[i][j-1])/(8*dz)-(szy[i][j+1]-szy[i][j-2])/(24*dz);
+        dsy[i][j] += 9*(szy[i][j]-szy[i][j-1])/(8*dz)-(szy[i][j+1]-szy[i][j-2])/(24*dz);
     }
 }
-__global__ void divSXZ(float **outx, float **outz, float **sxx, float **szz, float **sxz, float dx, float dz, int nx, int nz){
+__global__ void divSXZ(float **dsx, float **dsz, float **sxx, float **szz, float **sxz, float dx, float dz, int nx, int nz){
     devij;
     if(i >= 2 && i < nx - 2){
-        outx[i][j] = 9*(sxx[i][j]-sxx[i-1][j])/(8*dx)-(sxx[i+1][j]-sxx[i-2][j])/(24*dx);
-        outz[i][j] = 9*(sxz[i][j]-sxz[i-1][j])/(8*dx)-(sxz[i+1][j]-sxz[i-2][j])/(24*dx);
+        dsx[i][j] = 9*(sxx[i][j]-sxx[i-1][j])/(8*dx)-(sxx[i+1][j]-sxx[i-2][j])/(24*dx);
+        dsz[i][j] = 9*(sxz[i][j]-sxz[i-1][j])/(8*dx)-(sxz[i+1][j]-sxz[i-2][j])/(24*dx);
     }
     else{
-        outx[i][j] = 0;
-        outz[i][j] = 0;
+        dsx[i][j] = 0;
+        dsz[i][j] = 0;
     }
     if(j >= 2 && j < nz - 2){
-        outx[i][j] += 9*(sxz[i][j]-sxz[i][j-1])/(8*dz)-(sxz[i][j+1]-sxz[i][j-2])/(24*dz);
-        outz[i][j] += 9*(szz[i][j]-szz[i][j-1])/(8*dz)-(szz[i][j+1]-szz[i][j-2])/(24*dz);
+        dsx[i][j] += 9*(sxz[i][j]-sxz[i][j-1])/(8*dz)-(sxz[i][j+1]-sxz[i][j-2])/(24*dz);
+        dsz[i][j] += 9*(szz[i][j]-szz[i][j-1])/(8*dz)-(szz[i][j+1]-szz[i][j-2])/(24*dz);
     }
 }
-__global__ void divVY(float **outx, float **outz, float **vy, float dx, float dz, int nx, int nz){
+__global__ void divVY(float **dvydx, float **dvydz, float **vy, float dx, float dz, int nx, int nz){
     devij;
     if(i >= 1 && i < nx - 2){
-        outx[i][j] = 9*(vy[i+1][j]-vy[i][j])/(8*dx)-(vy[i+2][j]-vy[i-1][j])/(24*dx);
+        dvydx[i][j] = 9*(vy[i+1][j]-vy[i][j])/(8*dx)-(vy[i+2][j]-vy[i-1][j])/(24*dx);
     }
     else{
-        outx[i][j] = 0;
+        dvydx[i][j] = 0;
     }
     if(j >= 1 && j < nz - 2){
-        outz[i][j] = 9*(vy[i][j+1]-vy[i][j])/(8*dz)-(vy[i][j+2]-vy[i][j-1])/(24*dz);
+        dvydz[i][j] = 9*(vy[i][j+1]-vy[i][j])/(8*dz)-(vy[i][j+2]-vy[i][j-1])/(24*dz);
     }
     else{
-        outz[i][j] = 0;
+        dvydz[i][j] = 0;
     }
 }
-__global__ void divVXZ(float **outxx, float **outxz, float **outzx, float **outzz, float **vx, float **vz, float dx, float dz, int nx, int nz){
+__global__ void divVXZ(float **dvxdx, float **dvxdz, float **dvzdx, float **dvzdz, float **vx, float **vz, float dx, float dz, int nx, int nz){
     devij;
     if(i >= 1 && i < nx - 2){
-        outxx[i][j] = 9*(vx[i+1][j]-vx[i][j])/(8*dx)-(vx[i+2][j]-vx[i-1][j])/(24*dx);
-        outzx[i][j] = 9*(vz[i+1][j]-vz[i][j])/(8*dx)-(vz[i+2][j]-vz[i-1][j])/(24*dx);
+        dvxdx[i][j] = 9*(vx[i+1][j]-vx[i][j])/(8*dx)-(vx[i+2][j]-vx[i-1][j])/(24*dx);
+        dvzdx[i][j] = 9*(vz[i+1][j]-vz[i][j])/(8*dx)-(vz[i+2][j]-vz[i-1][j])/(24*dx);
     }
     else{
-        outxx[i][j] = 0;
-        outzx[i][j] = 0;
+        dvxdx[i][j] = 0;
+        dvzdx[i][j] = 0;
     }
     if(j >= 1 && j < nz - 2){
-        outxz[i][j] = 9*(vx[i][j+1]-vx[i][j])/(8*dz)-(vx[i][j+2]-vx[i][j-1])/(24*dz);
-        outzz[i][j] = 9*(vz[i][j+1]-vz[i][j])/(8*dz)-(vz[i][j+2]-vz[i][j-1])/(24*dz);
+        dvxdz[i][j] = 9*(vx[i][j+1]-vx[i][j])/(8*dz)-(vx[i][j+2]-vx[i][j-1])/(24*dz);
+        dvzdz[i][j] = 9*(vz[i][j+1]-vz[i][j])/(8*dz)-(vz[i][j+2]-vz[i][j-1])/(24*dz);
     }
     else{
-        outxz[i][j] = 0;
-        outzz[i][j] = 0;
+        dvxdz[i][j] = 0;
+        dvzdz[i][j] = 0;
     }
 }
 
@@ -709,6 +709,16 @@ void initialiseDynamicFields(fdat *dat){
     }
     // initialise kernels: later
 }
+void computeKernels(fdat *dat){
+    int &sh = dat->wave_propagation_sh;
+    int &psv = dat->wave_propagation_psv;
+
+    int &nx = dat->nx;
+    int &nz = dat->nz;
+    float &dx = dat->dx;
+    float &dz = dat->dz;
+    float &dt = dat->dt;
+}
 void runWaveFieldPropagation(fdat *dat){
     int &sh = dat->wave_propagation_sh;
     int &psv = dat->wave_propagation_psv;
@@ -785,7 +795,9 @@ void runWaveFieldPropagation(fdat *dat){
             }
         }
         else if(mode == 1){
-            // adjoint: later
+            if((n + dat->sfe) % dat->sfe == 0){
+                computeKernels(dat);
+            }
         }
     }
 }
@@ -899,17 +911,11 @@ void runAdjoint(fdat *dat){
     dat->simulation_mode = 1;
     runWaveFieldPropagation(dat);
 
-    float **v_rec_x = mat::createHost(dat->nrec, dat->nt);
-    float **v_rec_z = mat::createHost(dat->nrec, dat->nt);
-    mat::copyDeviceToHost(v_rec_x, dat->v_rec_x, dat->nrec, dat->nt);
-    mat::copyDeviceToHost(v_rec_z, dat->v_rec_z, dat->nrec, dat->nt);
-    mat::write(v_rec_x, dat->nrec, dat->nt, "vx_rec");
-    mat::write(v_rec_z, dat->nrec, dat->nt, "vz_rec");
-    mat::write(dat->ux_forward, dat->nsfe, dat->nx, dat->nz, "vx");
-    mat::write(dat->uz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
+
 }
 void inversionRoutine(fdat *dat){
-
+    runForward(dat);
+    runAdjoint(dat);
 }
 
 int main(int argc , char *argv[]){
@@ -917,7 +923,7 @@ int main(int argc , char *argv[]){
     checkArgs(dat);
     if(argc == 1){
         runForward(dat);
-        runAdjoint(dat);
+        // runAdjoint(dat);
     }
     else{
         for(int i = 1; i< argc; i++){

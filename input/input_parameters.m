@@ -306,7 +306,7 @@ absorb_bottom=1;% absorb waves on the bottom boundary
 
 % plot every 'plot every'th image (otherwise computationally rather heavy)
 % plot_every=nt*2; % value larger than nt, so that no plotting takes place
-plot_every = 200;
+plot_every = 0;
 
 plot_forward_frames='PSV';   % 'X-Y-Z' or 'X-Y' or 'PSV-SH' or 'PSV'
                              % which frames should be plotted in the forward calculation
