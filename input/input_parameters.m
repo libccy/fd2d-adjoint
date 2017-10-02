@@ -339,6 +339,6 @@ make_movie_adj='no';                               % 'yes' or 'no'
 movie_file=['./output/',project_name,'/Velocity.forward'];        % output file name
 movie_file_adj=['./output/',project_name,'/Velocity.adjoint'];
 movie_label = 'S-wave past a block \rho_2 anomaly (v_s & v_p constant)';
-plot_contour_rho_anom = true;
+plot_contour_rho_anom = false;
 
 filter_stf_with_freqlist = true;

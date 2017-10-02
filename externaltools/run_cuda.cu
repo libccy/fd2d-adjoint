@@ -274,6 +274,17 @@ namespace mat{
         }
         fclose(file);
     }
+    void write(float ***data, int p, int m, int n, char *fname){
+        char buffer[50] = "externaltools/";
+        strcat(buffer, fname);
+        FILE *file = fopen(buffer, "wb");
+        for(int k = 0; k < p; k++){
+            for(int i = 0; i < m; i++){
+                fwrite(data[k][i], sizeof(float), n, file);
+            }
+        }
+        fclose(file);
+    }
 }
 
 void printMat(float **a, int m, int n){
@@ -738,7 +749,7 @@ void runWaveFieldPropagation(fdat *dat){
             );
         }
         else if(mode == 1){
-            addSTF<<<dat->nsrc, 1>>>(
+            addSTF<<<dat->nrec, 1>>>(
                 dat->dsx, dat->dsy, dat->dsz, dat->stf_x, dat->stf_y, dat->stf_z,
                 dat->rec_x_id, dat->rec_z_id, sh, psv, n
             );
@@ -879,8 +890,23 @@ void runForward(fdat *dat){
     float **v_rec_z = mat::createHost(dat->nrec, dat->nt);
     mat::copyDeviceToHost(v_rec_x, dat->v_rec_x, dat->nrec, dat->nt);
     mat::copyDeviceToHost(v_rec_z, dat->v_rec_z, dat->nrec, dat->nt);
-    mat::write(v_rec_x, dat->nrec, dat->nt, "vx");
-    mat::write(v_rec_z, dat->nrec, dat->nt, "vz");
+    mat::write(v_rec_x, dat->nrec, dat->nt, "vx_rec");
+    mat::write(v_rec_z, dat->nrec, dat->nt, "vz_rec");
+    mat::write(dat->vx_forward, dat->nsfe, dat->nx, dat->nz, "vx");
+    mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
+}
+void runAdjoint(fdat *dat){
+    dat->simulation_mode = 1;
+    runWaveFieldPropagation(dat);
+
+    float **v_rec_x = mat::createHost(dat->nrec, dat->nt);
+    float **v_rec_z = mat::createHost(dat->nrec, dat->nt);
+    mat::copyDeviceToHost(v_rec_x, dat->v_rec_x, dat->nrec, dat->nt);
+    mat::copyDeviceToHost(v_rec_z, dat->v_rec_z, dat->nrec, dat->nt);
+    mat::write(v_rec_x, dat->nrec, dat->nt, "vx_rec");
+    mat::write(v_rec_z, dat->nrec, dat->nt, "vz_rec");
+    mat::write(dat->ux_forward, dat->nsfe, dat->nx, dat->nz, "vx");
+    mat::write(dat->uz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
 }
 void inversionRoutine(fdat *dat){
 
@@ -891,6 +917,7 @@ int main(int argc , char *argv[]){
     checkArgs(dat);
     if(argc == 1){
         runForward(dat);
+        runAdjoint(dat);
     }
     else{
         for(int i = 1; i< argc; i++){
