@@ -1,4 +1,4 @@
-type = 2;
+type = 1;
 clc;
 
 if type < 0

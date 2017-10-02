@@ -709,16 +709,6 @@ void initialiseDynamicFields(fdat *dat){
     }
     // initialise kernels: later
 }
-void computeKernels(fdat *dat){
-    int &sh = dat->wave_propagation_sh;
-    int &psv = dat->wave_propagation_psv;
-
-    int &nx = dat->nx;
-    int &nz = dat->nz;
-    float &dx = dat->dx;
-    float &dz = dat->dz;
-    float &dt = dat->dt;
-}
 void runWaveFieldPropagation(fdat *dat){
     int &sh = dat->wave_propagation_sh;
     int &psv = dat->wave_propagation_psv;
@@ -752,17 +742,20 @@ void runWaveFieldPropagation(fdat *dat){
         if(psv){
             divSXZ<<<dimGrid, dimBlock>>>(dat->dsx, dat->dsz, dat->sxx, dat->szz, dat->sxz, dx, dz, nx, nz);
         }
-        if(mode == 0){
-            addSTF<<<dat->nsrc, 1>>>(
-                dat->dsx, dat->dsy, dat->dsz, dat->stf_x, dat->stf_y, dat->stf_z,
-                dat->src_x_id, dat->src_z_id, sh, psv, n
-            );
-        }
-        else if(mode == 1){
-            addSTF<<<dat->nrec, 1>>>(
-                dat->dsx, dat->dsy, dat->dsz, dat->stf_x, dat->stf_y, dat->stf_z,
-                dat->rec_x_id, dat->rec_z_id, sh, psv, n
-            );
+        switch(mode){
+            case 0:{
+                addSTF<<<dat->nsrc, 1>>>(
+                    dat->dsx, dat->dsy, dat->dsz, dat->stf_x, dat->stf_y, dat->stf_z,
+                    dat->src_x_id, dat->src_z_id, sh, psv, n
+                );
+                break;
+            }
+            case 1:{
+                addSTF<<<dat->nrec, 1>>>(
+                    dat->dsx, dat->dsy, dat->dsz, dat->stf_x, dat->stf_y, dat->stf_z,
+                    dat->rec_x_id, dat->rec_z_id, sh, psv, n
+                );
+            }
         }
         if(sh){
             updateV<<<dimGrid, dimBlock>>>(dat->vy, dat->dsy, dat->rho, dat->absbound, dt);
@@ -778,25 +771,33 @@ void runWaveFieldPropagation(fdat *dat){
             updateU<<<dimGrid, dimBlock>>>(dat->ux, dat->vx, dt);
             updateU<<<dimGrid, dimBlock>>>(dat->uz, dat->vz, dt);
         }
-        if(mode == 0){
-            saveV<<<dat->nrec, 1>>>(
-                dat->v_rec_x, dat->v_rec_y, dat->v_rec_z, dat->vx, dat->vy, dat->vz,
-                dat->rec_x_id, dat->rec_z_id, sh, psv, n
-            );
-            if((n + 1) % dat->sfe == 0){
-                int isfe = dat->nsfe - (n + 1) / dat->sfe;
-                if(sh){
-                    mat::copyDeviceToHost(dat->vy_forward[isfe], dat->vy, nx, nz);
+        switch(mode){
+            case 0:{
+                saveV<<<dat->nrec, 1>>>(
+                    dat->v_rec_x, dat->v_rec_y, dat->v_rec_z, dat->vx, dat->vy, dat->vz,
+                    dat->rec_x_id, dat->rec_z_id, sh, psv, n
+                );
+                if((n + 1) % dat->sfe == 0){
+                    int isfe = dat->nsfe - (n + 1) / dat->sfe;
+                    if(sh){
+                        mat::copyDeviceToHost(dat->vy_forward[isfe], dat->vy, nx, nz);
+                    }
+                    if(psv){
+                        mat::copyDeviceToHost(dat->vx_forward[isfe], dat->vx, nx, nz);
+                        mat::copyDeviceToHost(dat->vz_forward[isfe], dat->vz, nx, nz);
+                    }
                 }
-                if(psv){
-                    mat::copyDeviceToHost(dat->vx_forward[isfe], dat->vx, nx, nz);
-                    mat::copyDeviceToHost(dat->vz_forward[isfe], dat->vz, nx, nz);
-                }
+                break;
             }
-        }
-        else if(mode == 1){
-            if((n + dat->sfe) % dat->sfe == 0){
-                computeKernels(dat);
+            case 1:{
+                if((n + dat->sfe) % dat->sfe == 0){
+                    if(sh){
+                        divVY<<<dimGrid, dimBlock>>>(dat->dvydx, dat->dvydz, dat->uy, dx, dz, nx, nz);
+                    }
+                    if(psv){
+                        divVXZ<<<dimGrid, dimBlock>>>(dat->dvxdx, dat->dvxdz, dat->dvzdx, dat->dvzdz, dat->ux, dat->uz, dx, dz, nx, nz);
+                    }
+                }
             }
         }
     }
