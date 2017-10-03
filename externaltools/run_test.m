@@ -1,15 +1,23 @@
-cfg = 5;
-clc;
+cfg = 0; clc;
 
 if cfg < 0
     if cfg == -1
         [v_rec,t,u_fw,v_fw]=run_forward;
+    elseif cfg == -2
+        [v_rec,t,u_fw,v_fw]=run_forward;
+        stf = prepare_stf;
+        stf = {stf.stf};
+        K = run_adjoint(u_fw,v_fw,stf);
     end
-elseif cfg > 0
-    compile_cuda;
+elseif cfg >= 0
+    if cfg > 2
+        cfg = cfg - 2;
+    else
+        compile_cuda;
+    end
     
     [vx_rec, vz_rec, vx, vz, t] = run_cuda('vx_rec', 'vz_rec', 'vx', 'vz', 't');
-    [nx, nz, nt, nrec, nsfe]=getn;
+    [nx, nz, nt, nrec, nsfe]=getn; 
     
     if abs(cfg) < 3
         vx_rec = spanarr(vx_rec, nrec, nt);
@@ -26,7 +34,6 @@ elseif cfg > 0
         v_fw.x = vx;
         v_fw.z = vz;
     end
-    
     clear('vx_rec', 'vz_rec', 'vx', 'vz');
 end
 
@@ -41,17 +48,17 @@ if abs(cfg) ==1
         plot(t,v_rec{i}.z);
         xlabel('vz');
     end
-    clear('i','n','mode');
 elseif abs(cfg) == 2
     animate_output(v_fw);
 end
+clear('i','n','cfg');
 
 function [nx, nz, nt, nrec, nsfe] = getn() %#ok<STOUT>
     input_parameters;
     nsfe = nt / store_fw_every;
 end
 
-function oarr = spanarr(iarr, m, n, p)
+function [oarr] = spanarr(iarr, m, n, p)
     if nargin == 3
         oarr = zeros(m, n);
         for i = 1:m
@@ -70,3 +77,5 @@ function oarr = spanarr(iarr, m, n, p)
         end
     end
 end
+
+

@@ -97,9 +97,6 @@ typedef struct{
     float **dvzdx_fw;
     float **dvzdz_fw;
 
-    float **interaction_lambda;
-    float **interaction_mu;
-    float **interation_rho;
     float **K_lambda;
     float **K_mu;
     float **K_rho;
@@ -427,6 +424,28 @@ __global__ void updateU(float **u, float **v, float dt){
     devij;
     u[i][j] += v[i][j] * dt;
 }
+__global__ void interactionRhoY(float **K_rho, float **vy, float **vy_fw, float tsfe){
+    devij;
+    K_rho[i][j] -= vy_fw[i][j] * vy[i][j] * tsfe;
+}
+__global__ void interactionRhoXZ(float **K_rho, float **vx, float **vx_fw, float **vz, float **vz_fw, float tsfe){
+    devij;
+    K_rho[i][j] -= (vx_fw[i][j] * vx[i][j] + vz_fw[i][j] * vz[i][j]) * tsfe;
+}
+__global__ void interactionMuY(float **K_mu, float **dvydx, float **dvydx_fw, float **dvydz, float **dvydz_fw, float tsfe){
+    devij;
+    K_mu[i][j] -= (dvydx[i][j] * dvydx_fw[i][j] + dvydz[i][j] * dvydz_fw[i][j]) * tsfe;
+}
+__global__ void interactionMuXZ(float **K_mu, float **dvxdx, float **dvxdx_fw, float **dvxdz, float **dvxdz_fw,
+    float **dvzdx, float **dvzdx_fw, float **dvzdz, float **dvzdz_fw, float tsfe){
+    devij;
+    K_mu[i][j] -= (2 * dvxdx[i][j] * dvxdx_fw[i][j] + 2 * dvzdz[i][j] * dvzdz_fw[i][j] +
+        (dvxdz[i][j] + dvzdx[i][j]) * (dvzdx_fw[i][j] + dvxdz_fw[i][j])) * tsfe;
+}
+__global__ void interactionLambdaXZ(float **K_lambda, float **dvxdx, float **dvxdx_fw, float **dvzdz, float **dvzdz_fw, float tsfe){
+    devij;
+    K_lambda[i][j] -= ((dvxdx[i][j] + dvzdz[i][j]) * (dvxdx_fw[i][j] + dvzdz_fw[i][j])) * tsfe;
+}
 
 __global__ void computeIndices(int *coord_n_id, float *coord_n, float Ln, float n){
     int i = blockIdx.x;
@@ -742,16 +761,19 @@ void runWaveFieldPropagation(fdat *dat){
     initialiseDynamicFields(dat);
 
     for(int n = 0; n < dat->nt; n++){
-        if((n + 1) % dat->sfe == 0){
-            int isfe = dat->nsfe - (n + 1) / dat->sfe;
-            if(sh){
-                mat::copyDeviceToHost(dat->uy_forward[isfe], dat->uy, nx, nz);
-            }
-            if(psv){
-                mat::copyDeviceToHost(dat->ux_forward[isfe], dat->ux, nx, nz);
-                mat::copyDeviceToHost(dat->uz_forward[isfe], dat->uz, nx, nz);
+        if(mode == 0){
+            if((n + 1) % dat->sfe == 0){
+                int isfe = dat->nsfe - (n + 1) / dat->sfe;
+                if(sh){
+                    mat::copyDeviceToHost(dat->uy_forward[isfe], dat->uy, nx, nz);
+                }
+                if(psv){
+                    mat::copyDeviceToHost(dat->ux_forward[isfe], dat->ux, nx, nz);
+                    mat::copyDeviceToHost(dat->uz_forward[isfe], dat->uz, nx, nz);
+                }
             }
         }
+
         if(sh){
             divSY<<<dimGrid, dimBlock>>>(dat->dsy, dat->sxy, dat->szy, dx, dz, nx, nz);
         }
@@ -808,21 +830,42 @@ void runWaveFieldPropagation(fdat *dat){
             }
             case 1:{
                 if((n + dat->sfe) % dat->sfe == 0){
-                    int n_fw = (n + dat->sfe) / dat->sfe - 1;
+                    // dsi -> ui_fw -> vi_fw
+                    int isfe = (n + dat->sfe) / dat->sfe - 1;
+                    float tsfe = dat->sfe * dt;
                     if(sh){
-                        mat::copyHostToDevice(dat->dsy, dat->uy_forward[n_fw], nx, nz);
+                        mat::copyHostToDevice(dat->dsy, dat->uy_forward[isfe], nx, nz);
                         divVY<<<dimGrid, dimBlock>>>(dat->dvydx, dat->dvydz, dat->uy, dx, dz, nx, nz);
                         divVY<<<dimGrid, dimBlock>>>(dat->dvydx_fw, dat->dvydz_fw, dat->dsy, dx, dz, nx, nz);
+                        mat::copyHostToDevice(dat->dsy, dat->vy_forward[isfe], nx, nz);
+                        interactionRhoY<<<dimGrid, dimBlock>>>(dat->K_rho, dat->vy, dat->dsy, tsfe);
+                        interactionMuY<<<dimGrid, dimBlock>>>(dat->K_mu, dat->dvydx, dat->dvydx_fw, dat->dvydz, dat->dvydz_fw, tsfe);
                     }
                     if(psv){
-                        mat::copyHostToDevice(dat->dsx, dat->ux_forward[n_fw], nx, nz);
-                        mat::copyHostToDevice(dat->dsz, dat->uz_forward[n_fw], nx, nz);
-                        divVXZ<<<dimGrid, dimBlock>>>(dat->dvxdx, dat->dvxdz, dat->dvzdx, dat->dvzdz, dat->ux, dat->uz, dx, dz, nx, nz);
+                        mat::copyHostToDevice(dat->dsx, dat->ux_forward[isfe], nx, nz);
+                        mat::copyHostToDevice(dat->dsz, dat->uz_forward[isfe], nx, nz);
+                        divVXZ<<<dimGrid, dimBlock>>>(
+                            dat->dvxdx, dat->dvxdz, dat->dvzdx, dat->dvzdz,
+                            dat->ux, dat->uz, dx, dz, nx, nz
+                        );
                         divVXZ<<<dimGrid, dimBlock>>>(
                             dat->dvxdx_fw, dat->dvxdz_fw, dat->dvzdx_fw, dat->dvzdz_fw,
                             dat->dsx, dat->dsx, dx, dz, nx, nz
                         );
+
+                        mat::copyHostToDevice(dat->dsx, dat->vx_forward[isfe], nx, nz);
+                        mat::copyHostToDevice(dat->dsz, dat->vz_forward[isfe], nx, nz);
+                        interactionRhoXZ<<<dimGrid, dimBlock>>>(dat->K_rho, dat->vx, dat->dsx, dat->vz, dat->dsz, tsfe);
+                        interactionMuXZ<<<dimGrid, dimBlock>>>(
+                            dat->K_mu, dat->dvxdx, dat->dvxdx_fw, dat->dvxdz, dat->dvxdz_fw,
+                            dat->dvzdx, dat->dvzdx_fw, dat->dvzdz, dat->dvzdz_fw, tsfe
+                        );
+                        interactionLambdaXZ<<<dimGrid, dimBlock>>>(dat->K_lambda, dat->dvxdx, dat->dvxdx_fw, dat->dvzdz, dat->dvzdz_fw, tsfe);
                     }
+
+
+                    mat::copyDeviceToHost(dat->vx_forward[isfe], dat->K_mu, nx, nz); // later
+                    mat::copyDeviceToHost(dat->vz_forward[isfe], dat->K_lambda, nx, nz); // later
                 }
                 break;
             }
@@ -895,9 +938,7 @@ void checkArgs(fdat *dat, int adjoint){
             dat->dvzdx_fw = mat::create(nx, nz);
             dat->dvzdz_fw = mat::create(nx, nz);
         }
-        dat->interaction_lambda = mat::create(nx, nz);
-        dat->interaction_mu = mat::create(nx, nz); // map to dat->dsx/z: later
-        dat->interation_rho = mat::create(nx, nz); // seperate rho x/z: later
+
         dat->K_lambda = mat::create(nx, nz);
         dat->K_mu = mat::create(nx, nz);
         dat->K_rho = mat::create(nx, nz);
@@ -923,13 +964,6 @@ void checkArgs(fdat *dat, int adjoint){
     else{
         defineMaterialParameters(dat);
     }
-    if(dat->use_given_stf){
-        // GivenSTF: later
-    }
-    else{
-        // adjoint: later
-        prepareSTF(dat);
-    }
 
     computeIndices<<<dat->nsrc, 1>>>(dat->src_x_id, dat->src_x, dat->Lx, dat->nx);
     computeIndices<<<dat->nsrc, 1>>>(dat->src_z_id, dat->src_z, dat->Lz, dat->nz);
@@ -952,6 +986,13 @@ void checkArgs(fdat *dat, int adjoint){
 }
 void runForward(fdat *dat){
     dat->simulation_mode = 0;
+    if(dat->use_given_stf){
+        // GivenSTF: later
+    }
+    else{
+        // adjoint: later
+        prepareSTF(dat);
+    }
     runWaveFieldPropagation(dat);
 
     float **v_rec_x = mat::createHost(dat->nrec, dat->nt);
@@ -964,6 +1005,15 @@ void runForward(fdat *dat){
     mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
 }
 void runAdjoint(fdat *dat){
+    dat->simulation_mode = 0; //later
+    if(dat->use_given_stf){
+        // GivenSTF: later
+    }
+    else{
+        // adjoint: later
+        prepareSTF(dat);
+    }
+    runWaveFieldPropagation(dat);
     dat->simulation_mode = 1;
     runWaveFieldPropagation(dat);
 
@@ -973,8 +1023,8 @@ void runAdjoint(fdat *dat){
     mat::copyDeviceToHost(v_rec_z, dat->v_rec_z, dat->nrec, dat->nt);
     mat::write(v_rec_x, dat->nrec, dat->nt, "vx_rec");
     mat::write(v_rec_z, dat->nrec, dat->nt, "vz_rec");
-    mat::write(dat->ux_forward, dat->nsfe, dat->nx, dat->nz, "vx");
-    mat::write(dat->uz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
+    mat::write(dat->vx_forward, dat->nsfe, dat->nx, dat->nz, "vx");
+    mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
 }
 void inversionRoutine(fdat *dat){
     runForward(dat);

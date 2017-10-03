@@ -167,7 +167,7 @@ end
 
 
 % close(fig_adjoint_stf);
-if(nt>plot_every)
+if nt>plot_every && plot_every > 0
     close(fig_adjoint);
 end
 close(fig_mod);
