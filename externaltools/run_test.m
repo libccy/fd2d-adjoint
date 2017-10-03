@@ -1,4 +1,4 @@
-cfg = 2; clc;
+cfg = 1; clc;
 
 if cfg < 0
     if cfg == -1
@@ -23,7 +23,7 @@ elseif cfg >= 0
         for i=1:nrec
            v_rec{i} = struct();
            v_rec{i}.x = vx_rec(i,1:nt);
-           v_rec{i}.z = vx_rec(i,1:nt);
+           v_rec{i}.z = vz_rec(i,1:nt);
         end
         v_fw = struct();
         v_fw.x = vx;
@@ -63,7 +63,7 @@ function [oarr] = spanarr(iarr, m, n, p)
     if nargin == 3
         oarr = zeros(m, n);
         if length(iarr) < m * n
-            iarr = zeros(m * n);
+            iarr = zeros(1, m * n);
         end
         for i = 1:m
             for j = 1:n
@@ -73,7 +73,7 @@ function [oarr] = spanarr(iarr, m, n, p)
     elseif nargin == 4
         oarr = zeros(m, n, p);
         if length(iarr) < m * n * p
-            iarr = zeros(m * n * p);
+            iarr = zeros(1, m * n * p);
         end
         for i = 1:m
             for j = 1:n

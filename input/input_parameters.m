@@ -166,7 +166,7 @@ model_type=10; %(start)
 % src_z = src_info.loc_z;
 
 % 4 src @ centre depth
-nsrc = 1;
+nsrc = 2;
 src_x= (1: 1: nsrc) * (Lx/(nsrc+1.7));
 src_z=ones(size(src_x)) * (Lz / 2);
 for ii = 1:nsrc
