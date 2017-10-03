@@ -1013,9 +1013,17 @@ void runAdjoint(fdat *dat){
     // mat::write(dat->vx_forward, dat->nsfe, dat->nx, dat->nz, "vx");
     // mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
 }
-float calculateMisfit(fdat *dat, float **v_obs_x, float **v_obs_z, float **v_syn_x, float **v_syn_z){
-    // from here
+float calculateMisfitPercomponent(float *v_syn, float *v_obs, float dt, float nt){
+    // from here misfit_wavef_L2
     return 1;
+}
+float calculateMisfitPersource(float **v_syn_x, float **v_syn_z, float **v_obs_x, float **v_obs_z, float dt, float nrec, float nt){
+    float misfit = 0;
+    for(int irec = 0; irec < nrec; irec++){
+        misfit += calculateMisfitPercomponent(v_syn_x[irec], v_obs_x[irec], dt, nt);
+        misfit += calculateMisfitPercomponent(v_syn_z[irec], v_obs_z[irec], dt, nt);
+    }
+    return misfit;
 }
 void inversionRoutine(fdat *dat, float ***v_obs_x, float ***v_obs_z){
     int niter = 1; // move to dat: later
@@ -1041,7 +1049,7 @@ void inversionRoutine(fdat *dat, float ***v_obs_x, float ***v_obs_z){
             runForward(dat, isrc);
             mat::copyDeviceToHost(v_syn_x, dat->v_rec_x, nrec, nt);
             mat::copyDeviceToHost(v_syn_z, dat->v_rec_z, nrec, nt);
-            misfit += calculateMisfit(dat, v_obs_x[isrc], v_obs_z[isrc], v_syn_x, v_syn_z);
+            misfit += calculateMisfitPersource(v_syn_x, v_syn_z, v_obs_x[isrc], v_obs_z[isrc], dat->dt, nrec, nt);
         }
         if(iter == 0){
             misfit_init = misfit;
