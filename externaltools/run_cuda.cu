@@ -61,6 +61,9 @@ typedef struct{
     float **stf_x;
     float **stf_y;
     float **stf_z;
+    float **adstf_x;
+    float **adstf_y;
+    float **adstf_z;
 
     float **lambda;
     float **mu;
@@ -627,6 +630,16 @@ fdat *importData(void){
     }
     return dat;
 }
+void checkMemoryUsage(){
+    size_t free_byte ;
+    size_t total_byte ;
+    cudaMemGetInfo( &free_byte, &total_byte ) ;
+    float free_db = (float)free_byte ;
+    float total_db = (float)total_byte ;
+    float used_db = total_db - free_db ;
+
+    printf("memory usage: %.1fMB / %.1fMB\n", used_db / 1024.0 / 1024.0, total_db / 1024.0 / 1024.0);
+}
 void makeSourceTimeFunction(fdat *dat, float *stf, int index){
     float max = 0;
     float alfa = 2 * dat->tauw_0[index] / dat->tauw[index];
@@ -673,6 +686,35 @@ void prepareSTF(fdat *dat){
     mat::copyHostToDevice(dat->stf_x, stf_x, dat->nsrc, dat->nt);
     mat::copyHostToDevice(dat->stf_y, stf_y, dat->nsrc, dat->nt);
     mat::copyHostToDevice(dat->stf_z, stf_z, dat->nsrc, dat->nt);
+
+    mat::freeMat(stf_x);
+    mat::freeMat(stf_y);
+    mat::freeMat(stf_z);
+    mat::freeMat(stfn);
+}
+void prepareAdjointSTF(fdat *dat){ //delete later
+    int &nt = dat->nt;
+    float amp = dat->source_amplitude / dat->dx / dat->dz;
+    float **stf_x = mat::createHost(dat->nrec, dat->nt);
+    float **stf_y = mat::createHost(dat->nrec, dat->nt);
+    float **stf_z = mat::createHost(dat->nrec, dat->nt);
+    float *stfn = mat::createHost(dat->nt);
+
+    for(int i=0; i < dat->nrec; i++){
+        makeSourceTimeFunction(dat, stfn, 0);
+        float px = dat->stf_PSV_x[0];
+        float pz = dat->stf_PSV_z[0];
+        float norm = sqrt(pow(px,2) + pow(pz,2));
+        for(int j = 0; j < nt; j++){
+            stf_x[i][j] = amp * stfn[j] * px / norm;
+            stf_y[i][j] = amp * stfn[j];
+            stf_z[i][j] = amp * stfn[j] * pz / norm;
+        }
+    }
+
+    mat::copyHostToDevice(dat->adstf_x, stf_x, dat->nrec, dat->nt);
+    mat::copyHostToDevice(dat->adstf_y, stf_y, dat->nrec, dat->nt);
+    mat::copyHostToDevice(dat->adstf_z, stf_z, dat->nrec, dat->nt);
 
     mat::freeMat(stf_x);
     mat::freeMat(stf_y);
@@ -790,7 +832,7 @@ void runWaveFieldPropagation(fdat *dat){
             }
             case 1:{
                 addSTF<<<dat->nrec, 1>>>(
-                    dat->dsx, dat->dsy, dat->dsz, dat->stf_x, dat->stf_y, dat->stf_z,
+                    dat->dsx, dat->dsy, dat->dsz, dat->adstf_x, dat->adstf_y, dat->adstf_z,
                     dat->rec_x_id, dat->rec_z_id, sh, psv, n
                 );
                 break;
@@ -923,6 +965,10 @@ void checkArgs(fdat *dat, int adjoint){
     dat->rho = mat::create(nx, nz);
     dat->mu = mat::create(nx, nz);
 
+    dat->stf_x = mat::create(dat->nsrc, dat->nt);
+    dat->stf_y = mat::create(dat->nsrc, dat->nt);
+    dat->stf_z = mat::create(dat->nsrc, dat->nt);
+
     if(adjoint){
         if(sh){
             dat->dvydx_fw = mat::create(nx, nz);
@@ -939,14 +985,9 @@ void checkArgs(fdat *dat, int adjoint){
         dat->K_mu = mat::create(nx, nz);
         dat->K_rho = mat::create(nx, nz);
 
-        dat->stf_x = mat::create(dat->nrec, dat->nt);
-        dat->stf_y = mat::create(dat->nrec, dat->nt);
-        dat->stf_z = mat::create(dat->nrec, dat->nt);
-    }
-    else{
-        dat->stf_x = mat::create(dat->nsrc, dat->nt);
-        dat->stf_y = mat::create(dat->nsrc, dat->nt);
-        dat->stf_z = mat::create(dat->nsrc, dat->nt);
+        dat->adstf_x = mat::create(dat->nrec, dat->nt);
+        dat->adstf_y = mat::create(dat->nrec, dat->nt);
+        dat->adstf_z = mat::create(dat->nrec, dat->nt);
     }
 
     dat->src_x_id = mat::createInt(dat->nsrc);
@@ -982,76 +1023,57 @@ void checkArgs(fdat *dat, int adjoint){
 }
 void runForward(fdat *dat){
     dat->simulation_mode = 0;
-    if(dat->use_given_stf){
-        // GivenSTF: later
-    }
-    else{
-        // adjoint: later
-        prepareSTF(dat);
-    }
     runWaveFieldPropagation(dat);
 
-    float **v_rec_x = mat::createHost(dat->nrec, dat->nt);
-    float **v_rec_z = mat::createHost(dat->nrec, dat->nt);
-    // mat::copyDeviceToHost(v_rec_x, dat->v_rec_x, dat->nrec, dat->nt);
-    // mat::copyDeviceToHost(v_rec_z, dat->v_rec_z, dat->nrec, dat->nt);
-    mat::write(v_rec_x, dat->nrec, dat->nt, "vx_rec");
-    mat::write(v_rec_z, dat->nrec, dat->nt, "vz_rec");
-    mat::write(dat->vx_forward, dat->nsfe, dat->nx, dat->nz, "vx");
-    mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
+    // float **v_rec_x = mat::createHost(dat->nrec, dat->nt);
+    // float **v_rec_z = mat::createHost(dat->nrec, dat->nt);
+    // // mat::copyDeviceToHost(v_rec_x, dat->v_rec_x, dat->nrec, dat->nt);
+    // // mat::copyDeviceToHost(v_rec_z, dat->v_rec_z, dat->nrec, dat->nt);
+    // mat::write(v_rec_x, dat->nrec, dat->nt, "vx_rec");
+    // mat::write(v_rec_z, dat->nrec, dat->nt, "vz_rec");
+    // mat::write(dat->vx_forward, dat->nsfe, dat->nx, dat->nz, "vx");
+    // mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
 }
 void runAdjoint(fdat *dat){
-    dat->simulation_mode = 0; //later
-    if(dat->use_given_stf){
-        // GivenSTF: later
-    }
-    else{
-        // adjoint: later
-        prepareSTF(dat);
-    }
-    runWaveFieldPropagation(dat);
     dat->simulation_mode = 1;
     runWaveFieldPropagation(dat);
 
-    float **rho = mat::createHost(dat->nx, dat->nz);
-    float **mu = mat::createHost(dat->nx, dat->nz);
-    float **lambda = mat::createHost(dat->nx, dat->nz);
-    mat::copyDeviceToHost(rho, dat->K_rho, dat->nx, dat->nz);
-    mat::copyDeviceToHost(mu, dat->K_mu, dat->nx, dat->nz);
-    mat::copyDeviceToHost(lambda, dat->K_lambda, dat->nx, dat->nz);
-    mat::write(rho, dat->nx, dat->nz, "rho");
-    mat::write(mu, dat->nx, dat->nz, "mu");
-    mat::write(lambda, dat->nx, dat->nz, "lambda");
+    // float **rho = mat::createHost(dat->nx, dat->nz);
+    // float **mu = mat::createHost(dat->nx, dat->nz);
+    // float **lambda = mat::createHost(dat->nx, dat->nz);
+    // mat::copyDeviceToHost(rho, dat->K_rho, dat->nx, dat->nz);
+    // mat::copyDeviceToHost(mu, dat->K_mu, dat->nx, dat->nz);
+    // mat::copyDeviceToHost(lambda, dat->K_lambda, dat->nx, dat->nz);
+    // mat::write(rho, dat->nx, dat->nz, "rho");
+    // mat::write(mu, dat->nx, dat->nz, "mu");
+    // mat::write(lambda, dat->nx, dat->nz, "lambda");
+    // mat::write(dat->vx_forward, dat->nsfe, dat->nx, dat->nz, "vx");
+    // mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
 }
 void inversionRoutine(fdat *dat){
-    runForward(dat);
+    dat->simulation_mode = 0; //later
+    runWaveFieldPropagation(dat);
+    prepareAdjointSTF(dat);
     runAdjoint(dat);
 }
 
 int main(int argc , char *argv[]){
     fdat *dat = importData();
-    checkArgs(dat, 1);
     if(argc == 1){
-        // runForward(dat);
-        runAdjoint(dat);
+        checkArgs(dat, 1);
+        prepareSTF(dat); //dat->use_given_stf: later
+        inversionRoutine(dat);
     }
     else{
         for(int i = 1; i< argc; i++){
             if(strcmp(argv[i],"run_forward") == 0){
+                checkArgs(dat, 0);
+                prepareSTF(dat);
                 runForward(dat);
             }
         }
     }
-    {
-        size_t free_byte ;
-        size_t total_byte ;
-        cudaMemGetInfo( &free_byte, &total_byte ) ;
-        float free_db = (float)free_byte ;
-        float total_db = (float)total_byte ;
-        float used_db = total_db - free_db ;
-
-        printf("memory usage: %.1fMB / %.1fMB\n", used_db / 1024.0 / 1024.0, total_db / 1024.0 / 1024.0);
-    }
+    checkMemoryUsage();
 
     return 0;
 }

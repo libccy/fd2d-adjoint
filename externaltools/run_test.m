@@ -1,4 +1,4 @@
-cfg = 3; clc;
+cfg = 2; clc;
 
 if cfg < 0
     if cfg == -1
@@ -34,6 +34,7 @@ elseif cfg >= 0
         rho = spanarr(rho,nx,nz);
         mu = spanarr(mu,nx,nz);
         lambda = spanarr(lambda,nx,nz);
+        imagesc(lambda);
     end
 end
 
@@ -61,6 +62,9 @@ end
 function [oarr] = spanarr(iarr, m, n, p)
     if nargin == 3
         oarr = zeros(m, n);
+        if length(iarr) < m * n
+            iarr = zeros(m * n);
+        end
         for i = 1:m
             for j = 1:n
                 oarr(i,j) = iarr((i-1)*n + j);
@@ -68,6 +72,9 @@ function [oarr] = spanarr(iarr, m, n, p)
         end
     elseif nargin == 4
         oarr = zeros(m, n, p);
+        if length(iarr) < m * n * p
+            iarr = zeros(m * n * p);
+        end
         for i = 1:m
             for j = 1:n
                 for k = 1:p
