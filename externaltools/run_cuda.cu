@@ -712,35 +712,6 @@ void prepareSTF(fdat *dat){
     mat::freeMat(stf_z);
     mat::freeMat(stfn);
 }
-void prepareAdjointSTF(fdat *dat){ //delete later
-    int &nt = dat->nt;
-    float amp = dat->source_amplitude / dat->dx / dat->dz;
-    float **stf_x = mat::createHost(dat->nrec, dat->nt);
-    float **stf_y = mat::createHost(dat->nrec, dat->nt);
-    float **stf_z = mat::createHost(dat->nrec, dat->nt);
-    float *stfn = mat::createHost(dat->nt);
-
-    for(int i=0; i < dat->nrec; i++){
-        makeSourceTimeFunction(dat, stfn, 0);
-        float px = dat->stf_PSV_x[0];
-        float pz = dat->stf_PSV_z[0];
-        float norm = sqrt(pow(px,2) + pow(pz,2));
-        for(int j = 0; j < nt; j++){
-            stf_x[i][j] = amp * stfn[j] * px / norm;
-            stf_y[i][j] = amp * stfn[j];
-            stf_z[i][j] = amp * stfn[j] * pz / norm;
-        }
-    }
-
-    mat::copyHostToDevice(dat->adstf_x, stf_x, dat->nrec, dat->nt);
-    mat::copyHostToDevice(dat->adstf_y, stf_y, dat->nrec, dat->nt);
-    mat::copyHostToDevice(dat->adstf_z, stf_z, dat->nrec, dat->nt);
-
-    mat::freeMat(stf_x);
-    mat::freeMat(stf_y);
-    mat::freeMat(stf_z);
-    mat::freeMat(stfn);
-}
 void defineMaterialParameters(fdat *dat){
     // other model_type: later
     int &nx = dat->nx;
@@ -994,12 +965,17 @@ void checkArgs(fdat *dat, int adjoint){
         if(sh){
             dat->dvydx_fw = mat::create(nx, nz);
             dat->dvydz_fw = mat::create(nx, nz);
+
+            dat->v_obs_y = mat::create(dat->nsrc, dat->nrec, dat->nt);
         }
         if(psv){
             dat->dvxdx_fw = mat::create(nx, nz);
             dat->dvxdz_fw = mat::create(nx, nz);
             dat->dvzdx_fw = mat::create(nx, nz);
             dat->dvzdz_fw = mat::create(nx, nz);
+
+            dat->v_obs_x = mat::create(dat->nsrc, dat->nrec, dat->nt);
+            dat->v_obs_z = mat::create(dat->nsrc, dat->nrec, dat->nt);
         }
 
         dat->K_lambda = mat::create(nx, nz);
@@ -1009,10 +985,6 @@ void checkArgs(fdat *dat, int adjoint){
         dat->adstf_x = mat::create(dat->nrec, dat->nt);
         dat->adstf_y = mat::create(dat->nrec, dat->nt);
         dat->adstf_z = mat::create(dat->nrec, dat->nt);
-
-        dat->v_obs_x = mat::create(dat->nsrc, dat->nrec, dat->nt);
-        dat->v_obs_y = mat::create(dat->nsrc, dat->nrec, dat->nt);
-        dat->v_obs_z = mat::create(dat->nsrc, dat->nrec, dat->nt);
     }
 
     dat->src_x_id = mat::createInt(dat->nsrc);
@@ -1080,8 +1052,26 @@ void inversionRoutine(fdat *dat){
     int starting_model = 10;
     int true_model = 13;
 
-    dat->model_type = starting_model;
-    defineMaterialParameters(dat);
+    int &nsrc = dat->nsrc;
+    int &nrec = dat->nrec;
+    // int &sh = dat->wave_propagation_sh;
+    // int &psv = dat->wave_propagation_psv;
+
+    int &nx = dat->nx;
+    int &ny = dat->nx;
+    int &nz = dat->nx;
+    int &nt = dat->nt;
+
+
+
+    // sh: later
+
+    float ***v_obs_x=mat::createHost(nsrc, nrec, nt);
+    float ***v_obs_z=mat::createHost(nsrc, nrec, nt);
+    float ***v_syn_x=mat::createHost(nsrc, nrec, nt);
+    float ***v_syn_z=mat::createHost(nsrc, nrec, nt);
+    mat::copyDeviceToHost(v_obs_x,dat->v_obs_x, nsrc, nrec, nt);
+    mat::copyDeviceToHost(v_obs_z,dat->v_obs_z, nsrc, nrec, nt);
 
     for(int iter = 0; iter < niter; i++){
 
@@ -1096,6 +1086,8 @@ int main(int argc , char *argv[]){
         dat->model_type = 13; // true model: later
         defineMaterialParameters(dat); //dat->use_given_model: later
         runForwardPersource(dat);
+        dat->model_type = 10;
+        defineMaterialParameters(dat);
         inversionRoutine(dat);
     }
     else{
