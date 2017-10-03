@@ -15,13 +15,10 @@ elseif cfg >= 0
     
     if abs(cfg) < 3
         [vx_rec, vz_rec, vx, vz, t] = run_cuda('vx_rec', 'vz_rec', 'vx', 'vz', 't');
-        vx=spanarr(vx,2,3,nt);
-        vx_rec=squeeze(vx(1,:,:));
-        vz_rec=squeeze(vx(2,:,:));
-%         vx_rec = spanarr(vx_rec, nrec, nt);
-%         vz_rec = spanarr(vz_rec, nrec, nt);
-%         vx = spanarr(vx, nsfe, nx, nz);
-%         vz = spanarr(vz, nsfe, nx, nz);
+        vx_rec = spanarr(vx_rec, nrec, nt);
+        vz_rec = spanarr(vz_rec, nrec, nt);
+        vx = spanarr(vx, nsfe, nx, nz);
+        vz = spanarr(vz, nsfe, nx, nz);
         v_rec = cell(1,nrec);
         for i=1:nrec
            v_rec{i} = struct();
