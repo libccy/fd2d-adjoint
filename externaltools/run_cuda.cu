@@ -36,6 +36,7 @@ typedef struct{
     int absorb_bottom;
     float absorb_width;
 
+    int isrc;
     int nsrc;
     int nrec;
 
@@ -107,6 +108,10 @@ typedef struct{
     float **v_rec_x;
     float **v_rec_y;
     float **v_rec_z;
+
+    float ***v_obs_x;
+    float ***v_obs_y;
+    float ***v_obs_z;
 
     float ***ux_forward;  // host
     float ***uy_forward;  // host
@@ -382,16 +387,18 @@ __global__ void divVXZ(float **dvxdx, float **dvxdz, float **dvzdx, float **dvzd
 }
 
 __global__ void addSTF(float **dsx, float **dsy, float **dsz, float **stf_x, float **stf_y, float **stf_z,
-    int *src_x_id, int *src_z_id, int sh, int psv, int n){
+    int *src_x_id, int *src_z_id, int isrc, int sh, int psv, int n){
     int is = blockIdx.x;
     int xs = src_x_id[is];
     int zs = src_z_id[is];
-    if(sh){
-        dsy[xs][zs] += stf_y[is][n];
-    }
-    if(psv){
-        dsx[xs][zs] += stf_x[is][n];
-        dsz[xs][zs] += stf_z[is][n];
+    if(isrc < 0 || isrc == is){
+        if(sh){
+            dsy[xs][zs] += stf_y[is][n];
+        }
+        if(psv){
+            dsx[xs][zs] += stf_x[is][n];
+            dsz[xs][zs] += stf_z[is][n];
+        }
     }
 }
 __global__ void saveV(float **v_rec_x, float **v_rec_y, float **v_rec_z, float **vx, float **vy, float **vz,
@@ -826,14 +833,14 @@ void runWaveFieldPropagation(fdat *dat){
             case 0:{
                 addSTF<<<dat->nsrc, 1>>>(
                     dat->dsx, dat->dsy, dat->dsz, dat->stf_x, dat->stf_y, dat->stf_z,
-                    dat->src_x_id, dat->src_z_id, sh, psv, n
+                    dat->src_x_id, dat->src_z_id, dat->isrc, sh, psv, n
                 );
                 break;
             }
             case 1:{
                 addSTF<<<dat->nrec, 1>>>(
                     dat->dsx, dat->dsy, dat->dsz, dat->adstf_x, dat->adstf_y, dat->adstf_z,
-                    dat->rec_x_id, dat->rec_z_id, sh, psv, n
+                    dat->rec_x_id, dat->rec_z_id, -1, sh, psv, n
                 );
                 break;
             }
@@ -854,10 +861,15 @@ void runWaveFieldPropagation(fdat *dat){
         }
         switch(mode){
             case 0:{
-                saveV<<<dat->nrec, 1>>>(
-                    dat->v_rec_x, dat->v_rec_y, dat->v_rec_z, dat->vx, dat->vy, dat->vz,
-                    dat->rec_x_id, dat->rec_z_id, sh, psv, n
-                );
+                if(dat->isrc < 0){
+                    saveV<<<dat->nrec, 1>>>(
+                        dat->v_rec_x, dat->v_rec_y, dat->v_rec_z, dat->vx, dat->vy, dat->vz,
+                        dat->rec_x_id, dat->rec_z_id, sh, psv, n
+                    );
+                }
+                else{
+
+                }
                 if((n + 1) % dat->sfe == 0){
                     int isfe = dat->nsfe - (n + 1) / dat->sfe;
                     if(sh){
@@ -923,6 +935,7 @@ void checkArgs(fdat *dat, int adjoint){
     dat->nsfe = dat->nt / dat->sfe;
     dat->dx = dat->Lx / (nx - 1);
     dat->dz = dat->Lz / (nz - 1);
+    dat->isrc = -1;
 
     if(sh){
         dat->vy = mat::create(nx, nz);
@@ -988,6 +1001,10 @@ void checkArgs(fdat *dat, int adjoint){
         dat->adstf_x = mat::create(dat->nrec, dat->nt);
         dat->adstf_y = mat::create(dat->nrec, dat->nt);
         dat->adstf_z = mat::create(dat->nrec, dat->nt);
+
+        dat->v_obs_x = mat::create(dat->nsrc, dat->nrec, dat->nt);
+        dat->v_obs_y = mat::create(dat->nsrc, dat->nrec, dat->nt);
+        dat->v_obs_z = mat::create(dat->nsrc, dat->nrec, dat->nt);
     }
 
     dat->src_x_id = mat::createInt(dat->nsrc);
@@ -1034,6 +1051,17 @@ void runForward(fdat *dat){
     // mat::write(dat->vx_forward, dat->nsfe, dat->nx, dat->nz, "vx");
     // mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
 }
+void runForwardPersource(fdat *dat){
+    dat->simulation_mode = 0;
+    for(int i = 0; i < dat->nsrc; i++){
+        dat->isrc = i;
+        runWaveFieldPropagation(dat);
+        if(i == 0){
+            mat::write(dat->vx_forward, dat->nsfe, dat->nx, dat->nz, "vx");
+            mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
+        }
+    }
+}
 void runAdjoint(fdat *dat){
     dat->simulation_mode = 1;
     runWaveFieldPropagation(dat);
@@ -1051,18 +1079,25 @@ void runAdjoint(fdat *dat){
     // mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
 }
 void inversionRoutine(fdat *dat){
-    dat->simulation_mode = 0; //later
-    runWaveFieldPropagation(dat);
-    prepareAdjointSTF(dat);
-    runAdjoint(dat);
+    int niter = 100; // move to dat: later
+
+
+
+    // dat->simulation_mode = 0; //later
+    // runWaveFieldPropagation(dat);
+    // prepareAdjointSTF(dat);
+    // runAdjoint(dat);
 }
 
 int main(int argc , char *argv[]){
     fdat *dat = importData();
     if(argc == 1){
-        checkArgs(dat, 1);
-        prepareSTF(dat); //dat->use_given_stf: later
-        inversionRoutine(dat);
+        // checkArgs(dat, 1);
+        // prepareSTF(dat); //dat->use_given_stf, sObsPerFreq: later
+        // inversionRoutine(dat);
+        checkArgs(dat, 0);
+        prepareSTF(dat);
+        runForwardPersource(dat);
     }
     else{
         for(int i = 1; i< argc; i++){
