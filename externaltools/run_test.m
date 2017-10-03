@@ -1,25 +1,20 @@
-cfg = 0; clc;
+cfg = 3; clc;
 
 if cfg < 0
     if cfg == -1
         [v_rec,t,u_fw,v_fw]=run_forward;
-    elseif cfg == -2
+    elseif cfg <= -2
         [v_rec,t,u_fw,v_fw]=run_forward;
         stf = prepare_stf;
         stf = {stf.stf};
         K = run_adjoint(u_fw,v_fw,stf);
     end
 elseif cfg >= 0
-    if cfg > 2
-        cfg = cfg - 2;
-    else
-        compile_cuda;
-    end
-    
-    [vx_rec, vz_rec, vx, vz, t] = run_cuda('vx_rec', 'vz_rec', 'vx', 'vz', 't');
+    compile_cuda;
     [nx, nz, nt, nrec, nsfe]=getn; 
     
     if abs(cfg) < 3
+        [vx_rec, vz_rec, vx, vz, t] = run_cuda('vx_rec', 'vz_rec', 'vx', 'vz', 't');
         vx_rec = spanarr(vx_rec, nrec, nt);
         vz_rec = spanarr(vz_rec, nrec, nt);
         vx = spanarr(vx, nsfe, nx, nz);
@@ -33,8 +28,13 @@ elseif cfg >= 0
         v_fw = struct();
         v_fw.x = vx;
         v_fw.z = vz;
+        clear('vx_rec', 'vz_rec', 'vx', 'vz');
+    else
+        [rho, mu, lambda, t] = run_cuda('rho', 'mu', 'lambda','t');
+        rho = spanarr(rho,nx,nz);
+        mu = spanarr(mu,nx,nz);
+        lambda = spanarr(lambda,nx,nz);
     end
-    clear('vx_rec', 'vz_rec', 'vx', 'vz');
 end
 
 if abs(cfg) ==1

@@ -850,7 +850,7 @@ void runWaveFieldPropagation(fdat *dat){
                         );
                         divVXZ<<<dimGrid, dimBlock>>>(
                             dat->dvxdx_fw, dat->dvxdz_fw, dat->dvzdx_fw, dat->dvzdz_fw,
-                            dat->dsx, dat->dsx, dx, dz, nx, nz
+                            dat->dsx, dat->dsz, dx, dz, nx, nz
                         );
 
                         mat::copyHostToDevice(dat->dsx, dat->vx_forward[isfe], nx, nz);
@@ -862,10 +862,6 @@ void runWaveFieldPropagation(fdat *dat){
                         );
                         interactionLambdaXZ<<<dimGrid, dimBlock>>>(dat->K_lambda, dat->dvxdx, dat->dvxdx_fw, dat->dvzdz, dat->dvzdz_fw, tsfe);
                     }
-
-
-                    mat::copyDeviceToHost(dat->vx_forward[isfe], dat->K_mu, nx, nz); // later
-                    mat::copyDeviceToHost(dat->vz_forward[isfe], dat->K_lambda, nx, nz); // later
                 }
                 break;
             }
@@ -997,8 +993,8 @@ void runForward(fdat *dat){
 
     float **v_rec_x = mat::createHost(dat->nrec, dat->nt);
     float **v_rec_z = mat::createHost(dat->nrec, dat->nt);
-    mat::copyDeviceToHost(v_rec_x, dat->v_rec_x, dat->nrec, dat->nt);
-    mat::copyDeviceToHost(v_rec_z, dat->v_rec_z, dat->nrec, dat->nt);
+    // mat::copyDeviceToHost(v_rec_x, dat->v_rec_x, dat->nrec, dat->nt);
+    // mat::copyDeviceToHost(v_rec_z, dat->v_rec_z, dat->nrec, dat->nt);
     mat::write(v_rec_x, dat->nrec, dat->nt, "vx_rec");
     mat::write(v_rec_z, dat->nrec, dat->nt, "vz_rec");
     mat::write(dat->vx_forward, dat->nsfe, dat->nx, dat->nz, "vx");
@@ -1017,14 +1013,15 @@ void runAdjoint(fdat *dat){
     dat->simulation_mode = 1;
     runWaveFieldPropagation(dat);
 
-    float **v_rec_x = mat::createHost(dat->nrec, dat->nt);
-    float **v_rec_z = mat::createHost(dat->nrec, dat->nt);
-    mat::copyDeviceToHost(v_rec_x, dat->v_rec_x, dat->nrec, dat->nt);
-    mat::copyDeviceToHost(v_rec_z, dat->v_rec_z, dat->nrec, dat->nt);
-    mat::write(v_rec_x, dat->nrec, dat->nt, "vx_rec");
-    mat::write(v_rec_z, dat->nrec, dat->nt, "vz_rec");
-    mat::write(dat->vx_forward, dat->nsfe, dat->nx, dat->nz, "vx");
-    mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
+    float **rho = mat::createHost(dat->nx, dat->nz);
+    float **mu = mat::createHost(dat->nx, dat->nz);
+    float **lambda = mat::createHost(dat->nx, dat->nz);
+    mat::copyDeviceToHost(rho, dat->K_rho, dat->nx, dat->nz);
+    mat::copyDeviceToHost(mu, dat->K_mu, dat->nx, dat->nz);
+    mat::copyDeviceToHost(lambda, dat->K_lambda, dat->nx, dat->nz);
+    mat::write(rho, dat->nx, dat->nz, "rho");
+    mat::write(mu, dat->nx, dat->nz, "mu");
+    mat::write(lambda, dat->nx, dat->nz, "lambda");
 }
 void inversionRoutine(fdat *dat){
     runForward(dat);
