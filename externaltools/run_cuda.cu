@@ -97,7 +97,7 @@ typedef struct{
     float **dvzdx_fw;
     float **dvzdz_fw;
 
-    float **interactio_lambda;
+    float **interaction_lambda;
     float **interaction_mu;
     float **interation_rho;
     float **K_lambda;
@@ -641,8 +641,8 @@ void prepareSTF(fdat *dat){
 
     for(int i=0; i < dat->nsrc; i++){
         makeSourceTimeFunction(dat, stfn, i);
-        float &px = dat->stf_PSV_x[i];
-        float &pz = dat->stf_PSV_z[i];
+        float px = dat->stf_PSV_x[i];
+        float pz = dat->stf_PSV_z[i];
         float norm = sqrt(pow(px,2) + pow(pz,2));
         for(int j = 0; j < nt; j++){
             stf_x[i][j] = amp * stfn[j] * px / norm;
@@ -721,7 +721,9 @@ void initialiseDynamicFields(fdat *dat){
         mat::init(dat->szz, nx, nz, 0);
         mat::init(dat->sxz, nx, nz, 0);
     }
-    // initialise kernels: later
+    mat::init(dat->K_lambda, nx, nz, 0);
+    mat::init(dat->K_mu, nx, nz, 0);
+    mat::init(dat->K_rho, nx, nz, 0);
 }
 void runWaveFieldPropagation(fdat *dat){
     int &sh = dat->wave_propagation_sh;
@@ -769,6 +771,7 @@ void runWaveFieldPropagation(fdat *dat){
                     dat->dsx, dat->dsy, dat->dsz, dat->stf_x, dat->stf_y, dat->stf_z,
                     dat->rec_x_id, dat->rec_z_id, sh, psv, n
                 );
+                break;
             }
         }
         if(sh){
@@ -805,11 +808,20 @@ void runWaveFieldPropagation(fdat *dat){
             }
             case 1:{
                 if((n + dat->sfe) % dat->sfe == 0){
+                    int n_fw = (n + dat->sfe) / dat->sfe - 1;
                     if(sh){
+                        mat::copyHostToDevice(dat->dsy, dat->uy_forward[n_fw], nx, nz);
                         divVY<<<dimGrid, dimBlock>>>(dat->dvydx, dat->dvydz, dat->uy, dx, dz, nx, nz);
+                        divVY<<<dimGrid, dimBlock>>>(dat->dvydx_fw, dat->dvydz_fw, dat->dsy, dx, dz, nx, nz);
                     }
                     if(psv){
+                        mat::copyHostToDevice(dat->dsx, dat->ux_forward[n_fw], nx, nz);
+                        mat::copyHostToDevice(dat->dsz, dat->uz_forward[n_fw], nx, nz);
                         divVXZ<<<dimGrid, dimBlock>>>(dat->dvxdx, dat->dvxdz, dat->dvzdx, dat->dvzdz, dat->ux, dat->uz, dx, dz, nx, nz);
+                        divVXZ<<<dimGrid, dimBlock>>>(
+                            dat->dvxdx_fw, dat->dvxdz_fw, dat->dvzdx_fw, dat->dvzdz_fw,
+                            dat->dsx, dat->dsx, dx, dz, nx, nz
+                        );
                     }
                 }
                 break;
@@ -818,6 +830,9 @@ void runWaveFieldPropagation(fdat *dat){
     }
 }
 void checkArgs(fdat *dat, int adjoint){
+    int &sh = dat->wave_propagation_sh;
+    int &psv = dat->wave_propagation_psv;
+
     int &nx = dat->nx;
     int &nz = dat->nz;
 
@@ -828,7 +843,7 @@ void checkArgs(fdat *dat, int adjoint){
     dat->dx = dat->Lx / (nx - 1);
     dat->dz = dat->Lz / (nz - 1);
 
-    if(dat->wave_propagation_sh){
+    if(sh){
         dat->vy = mat::create(nx, nz);
         dat->uy = mat::create(nx, nz);
         dat->sxy = mat::create(nx, nz);
@@ -837,16 +852,11 @@ void checkArgs(fdat *dat, int adjoint){
         dat->dvydx = mat::create(nx, nz);
         dat->dvydz = mat::create(nx, nz);
 
-        if(adjoint == 1){
-            dat->dvydx_fw = mat::create(nx, nz); //change to dat->dsx: later
-            dat->dvydz_fw = mat::create(nx, nz);
-        }
-
         dat->v_rec_y = mat::create(dat->nrec, dat->nt);
         dat->uy_forward = mat::createHost(dat->nsfe, nx, nz);
         dat->vy_forward = mat::createHost(dat->nsfe, nx, nz);
     }
-    if(dat->wave_propagation_psv){
+    if(psv){
         dat->vx = mat::create(nx, nz);
         dat->vz = mat::create(nx, nz);
         dat->ux = mat::create(nx, nz);
@@ -861,13 +871,6 @@ void checkArgs(fdat *dat, int adjoint){
         dat->dvzdx = mat::create(nx, nz);
         dat->dvzdz = mat::create(nx, nz);
 
-        if(adjoint == 1){
-            dat->dvxdx_fw = mat::create(nx, nz); //change to dat->dsx: later
-            dat->dvxdz_fw = mat::create(nx, nz);
-            dat->dvzdx_fw = mat::create(nx, nz);
-            dat->dvzdz_fw = mat::create(nx, nz);
-        }
-
         dat->v_rec_x = mat::create(dat->nrec, dat->nt);
         dat->v_rec_z = mat::create(dat->nrec, dat->nt);
         dat->ux_forward = mat::createHost(dat->nsfe, nx, nz);
@@ -881,18 +884,33 @@ void checkArgs(fdat *dat, int adjoint){
     dat->rho = mat::create(nx, nz);
     dat->mu = mat::create(nx, nz);
 
-    if(adjoint == 1){
-        dat->interactio_lambda = mat::create(nx, nz);
-        dat->interaction_mu = mat::create(nx, nz);
-        dat->interation_rho = mat::create(nx, nz);
+    if(adjoint){
+        if(sh){
+            dat->dvydx_fw = mat::create(nx, nz);
+            dat->dvydz_fw = mat::create(nx, nz);
+        }
+        if(psv){
+            dat->dvxdx_fw = mat::create(nx, nz);
+            dat->dvxdz_fw = mat::create(nx, nz);
+            dat->dvzdx_fw = mat::create(nx, nz);
+            dat->dvzdz_fw = mat::create(nx, nz);
+        }
+        dat->interaction_lambda = mat::create(nx, nz);
+        dat->interaction_mu = mat::create(nx, nz); // map to dat->dsx/z: later
+        dat->interation_rho = mat::create(nx, nz); // seperate rho x/z: later
         dat->K_lambda = mat::create(nx, nz);
         dat->K_mu = mat::create(nx, nz);
         dat->K_rho = mat::create(nx, nz);
-    }
 
-    dat->stf_x = mat::create(dat->nsrc, dat->nt);
-    dat->stf_y = mat::create(dat->nsrc, dat->nt);
-    dat->stf_z = mat::create(dat->nsrc, dat->nt);
+        dat->stf_x = mat::create(dat->nrec, dat->nt);
+        dat->stf_y = mat::create(dat->nrec, dat->nt);
+        dat->stf_z = mat::create(dat->nrec, dat->nt);
+    }
+    else{
+        dat->stf_x = mat::create(dat->nsrc, dat->nt);
+        dat->stf_y = mat::create(dat->nsrc, dat->nt);
+        dat->stf_z = mat::create(dat->nsrc, dat->nt);
+    }
 
     dat->src_x_id = mat::createInt(dat->nsrc);
     dat->src_z_id = mat::createInt(dat->nsrc);
@@ -909,6 +927,7 @@ void checkArgs(fdat *dat, int adjoint){
         // GivenSTF: later
     }
     else{
+        // adjoint: later
         prepareSTF(dat);
     }
 
@@ -948,7 +967,14 @@ void runAdjoint(fdat *dat){
     dat->simulation_mode = 1;
     runWaveFieldPropagation(dat);
 
-
+    float **v_rec_x = mat::createHost(dat->nrec, dat->nt);
+    float **v_rec_z = mat::createHost(dat->nrec, dat->nt);
+    mat::copyDeviceToHost(v_rec_x, dat->v_rec_x, dat->nrec, dat->nt);
+    mat::copyDeviceToHost(v_rec_z, dat->v_rec_z, dat->nrec, dat->nt);
+    mat::write(v_rec_x, dat->nrec, dat->nt, "vx_rec");
+    mat::write(v_rec_z, dat->nrec, dat->nt, "vz_rec");
+    mat::write(dat->ux_forward, dat->nsfe, dat->nx, dat->nz, "vx");
+    mat::write(dat->uz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
 }
 void inversionRoutine(fdat *dat){
     runForward(dat);
@@ -959,8 +985,8 @@ int main(int argc , char *argv[]){
     fdat *dat = importData();
     checkArgs(dat, 1);
     if(argc == 1){
-        runForward(dat);
-        // runAdjoint(dat);
+        // runForward(dat);
+        runAdjoint(dat);
     }
     else{
         for(int i = 1; i< argc; i++){
