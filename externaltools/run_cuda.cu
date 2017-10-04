@@ -900,7 +900,6 @@ void checkArgs(fdat *dat, int adjoint){
     dat->nsfe = dat->nt / dat->sfe;
     dat->dx = dat->Lx / (nx - 1);
     dat->dz = dat->Lz / (nz - 1);
-    dat->isrc = -1;
     dat->obs_type = 0;
 
     if(sh){
@@ -993,8 +992,9 @@ void checkArgs(fdat *dat, int adjoint){
     }
     mat::write(t, dat->nt, "t");
 }
-void runForward(fdat *dat){
+void runForward(fdat *dat, int isrc){
     dat->simulation_mode = 0;
+    dat->isrc = isrc;
     runWaveFieldPropagation(dat);
 
     // float **v_rec_x=mat::createHost(dat->nrec, dat->nt);
@@ -1022,15 +1022,15 @@ void runAdjoint(fdat *dat){
     // mat::write(dat->vx_forward, dat->nsfe, dat->nx, dat->nz, "vx");
     // mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
 }
-float calculateMisfitPercomponent(float *v_syn, float *v_obs, float *tw, float dt, int nt){
+float calculateMisfitPercomponent(float *u_syn, float *u_obs, float *tw, float dt, int nt){
     // from here misfit_wavef_L2
     return 1;
 }
-float calculateMisfitPersource(float **v_syn_x, float **v_syn_z, float **v_obs_x, float **v_obs_z, float *tw, float dt, int nrec, int nt){
+float calculateMisfitPersource(float **u_syn_x, float **u_syn_z, float **u_obs_x, float **u_obs_z, float *tw, float dt, int nrec, int nt){
     float misfit = 0;
     for(int irec = 0; irec < nrec; irec++){
-        misfit += calculateMisfitPercomponent(v_syn_x[irec], v_obs_x[irec], tw, dt, nt);
-        misfit += calculateMisfitPercomponent(v_syn_z[irec], v_obs_z[irec], tw, dt, nt);
+        misfit += calculateMisfitPercomponent(u_syn_x[irec], u_obs_x[irec], tw, dt, nt);
+        misfit += calculateMisfitPercomponent(u_syn_z[irec], u_obs_z[irec], tw, dt, nt);
     }
     return misfit;
 }
@@ -1055,17 +1055,7 @@ float *getTaperWeights(float dt, int nt){
     }
     return tw;
 }
-void u2v(float **v, float dt, int nrec, int nt){
-    for(int i = 0; i<nrec;i++){
-        for(int j=0;j<nt;j++){
-            v[i][j] *= dt;
-            if(j>1){
-                v[i][j]+=v[i][j-1];
-            }
-        }
-    }
-}
-void inversionRoutine(fdat *dat, float ***v_obs_x, float ***v_obs_z){
+void inversionRoutine(fdat *dat, float ***u_obs_x, float ***u_obs_z){
     int niter = 0; // move to dat: later
 
     int &nsrc = dat->nsrc;
@@ -1079,9 +1069,24 @@ void inversionRoutine(fdat *dat, float ***v_obs_x, float ***v_obs_z){
     int &nt = dat->nt;
     float &dt = dat->dt;
 
-    float **v_syn_x = mat::createHost(nrec, nt);
-    float **v_syn_z = mat::createHost(nrec, nt);
+    // convert velocity to displacement
+    for(int isrc = 0; isrc < nsrc; isrc++){
+        for(int irec = 0; irec < nrec; irec++){
+            for(int n = 0; n < nt; n++){
+                u_obs_x[isrc][irec][n] *= dt;
+                u_obs_z[isrc][irec][n] *= dt;
+                if(n > 0){
+                    u_obs_x[isrc][irec][n] += u_obs_x[isrc][irec][n-1];
+                    u_obs_z[isrc][irec][n] += u_obs_z[isrc][irec][n-1];
+                }
+            }
+        }
+    }
 
+    float **u_syn_x = mat::createHost(nrec, nt);
+    float **u_syn_z = mat::createHost(nrec, nt);
+
+    // taper weights
     float *tw = getTaperWeights(dt, nt);
 
     float misfit_init;
@@ -1089,11 +1094,10 @@ void inversionRoutine(fdat *dat, float ***v_obs_x, float ***v_obs_z){
     for(int iter = 0; iter < niter; iter++){
         float misfit = 0;
         for(int isrc = 0; isrc < nsrc; isrc++){
-            dat->isrc = isrc;
-            runForward(dat);
-            mat::copyDeviceToHost(v_syn_x, dat->v_rec_x, nrec, nt);
-            mat::copyDeviceToHost(v_syn_z, dat->v_rec_z, nrec, nt);
-            misfit += calculateMisfitPersource(v_syn_x, v_syn_z, v_obs_x[isrc], v_obs_z[isrc], tw, dt, nrec, nt);
+            runForward(dat, isrc);
+            mat::copyDeviceToHost(u_syn_x, dat->v_rec_x, nrec, nt);
+            mat::copyDeviceToHost(u_syn_z, dat->v_rec_z, nrec, nt);
+            misfit += calculateMisfitPersource(u_syn_x, u_syn_z, u_obs_x[isrc], u_obs_z[isrc], tw, dt, nrec, nt);
         }
         if(iter == 0){
             misfit_init = misfit;
@@ -1103,25 +1107,20 @@ void inversionRoutine(fdat *dat, float ***v_obs_x, float ***v_obs_z){
             misfit /= misfit_init;
         }
     }
-
-    mat::write(v_obs_x[0], nrec, nt, "vx_rec");
-    mat::write(v_obs_z[0], nrec, nt, "vz_rec");
 }
 void runSyntheticInvertion(fdat *dat){
     int &nsrc = dat->nsrc;
     int &nrec = dat->nrec;
     int &nt = dat->nt;
 
-    checkArgs(dat, 1);
-    dat->obs_type = 1;
-    prepareSTF(dat); //dat->use_given_stf, sObsPerFreq: later
+    checkArgs(dat, 1); // obs_type set to 0
     dat->model_type = 13; // true model: later
+    prepareSTF(dat); //dat->use_given_stf, sObsPerFreq: later
     defineMaterialParameters(dat); //dat->use_given_model: later
     float ***v_obs_x=mat::createHost(nsrc, nrec, nt);
     float ***v_obs_z=mat::createHost(nsrc, nrec, nt);
     for(int isrc = 0; isrc < nsrc; isrc++){
-        dat->isrc = isrc;
-        runForward(dat);
+        runForward(dat, isrc);
         mat::copyDeviceToHost(v_obs_x[isrc], dat->v_rec_x, nrec, nt);
         mat::copyDeviceToHost(v_obs_z[isrc], dat->v_rec_z, nrec, nt);
     }
@@ -1142,7 +1141,7 @@ int main(int argc , char *argv[]){
                 checkArgs(dat, 0);
                 prepareSTF(dat);
                 defineMaterialParameters(dat);
-                runForward(dat);
+                runForward(dat, -1);
             }
         }
     }
