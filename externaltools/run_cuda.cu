@@ -781,6 +781,12 @@ void runWaveFieldPropagation(fdat *dat){
 
     for(int n = 0; n < dat->nt; n++){
         if(mode == 0){
+            if(dat->obs_type == 1){
+                saveV<<<dat->nrec, 1>>>(
+                    dat->v_rec_x, dat->v_rec_y, dat->v_rec_z, dat->ux, dat->uy, dat->uz,
+                    dat->rec_x_id, dat->rec_z_id, sh, psv, n
+                );
+            }
             if((n + 1) % dat->sfe == 0){
                 int isfe = dat->nsfe - (n + 1) / dat->sfe;
                 if(sh){
@@ -829,12 +835,6 @@ void runWaveFieldPropagation(fdat *dat){
             if(dat->obs_type == 0){
                 saveV<<<dat->nrec, 1>>>(
                     dat->v_rec_x, dat->v_rec_y, dat->v_rec_z, dat->vx, dat->vy, dat->vz,
-                    dat->rec_x_id, dat->rec_z_id, sh, psv, n
-                );
-            }
-            else if(dat->obs_type == 1){
-                saveV<<<dat->nrec, 1>>>(
-                    dat->v_rec_x, dat->v_rec_y, dat->v_rec_z, dat->ux, dat->uy, dat->uz,
                     dat->rec_x_id, dat->rec_z_id, sh, psv, n
                 );
             }
@@ -1022,15 +1022,11 @@ void runAdjoint(fdat *dat){
     // mat::write(dat->vx_forward, dat->nsfe, dat->nx, dat->nz, "vx");
     // mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
 }
-float calculateMisfitPercomponent(float *u_syn, float *u_obs, float *tw, float dt, int nt){
-    // from here misfit_wavef_L2
-    return 1;
-}
-float calculateMisfitPersource(float **u_syn_x, float **u_syn_z, float **u_obs_x, float **u_obs_z, float *tw, float dt, int nrec, int nt){
+float calculateMisfit(float *u_syn, float *u_obs, float *tw, float dt, int nt){
     float misfit = 0;
-    for(int irec = 0; irec < nrec; irec++){
-        misfit += calculateMisfitPercomponent(u_syn_x[irec], u_obs_x[irec], tw, dt, nt);
-        misfit += calculateMisfitPercomponent(u_syn_z[irec], u_obs_z[irec], tw, dt, nt);
+    for(int i = 1; i < nt; i++){
+        float wavedif = (u_syn[i] - u_obs[i]) * tw[i];
+        misfit += wavedif * wavedif * dt;
     }
     return misfit;
 }
@@ -1055,8 +1051,26 @@ float *getTaperWeights(float dt, int nt){
     }
     return tw;
 }
+void convertV2U(float ***v, int nsrc, int nrec, int nt, float dt){
+    for(int isrc = 0; isrc < nsrc; isrc++){
+        for(int irec = 0; irec < nrec; irec++){
+            for(int i = 0; i < nt; i++){
+                if(i > 0){
+                    v[isrc][irec][i] = v[isrc][irec][i] * dt + v[isrc][irec][i-1];
+                }
+                else{
+                    v[isrc][irec][i] *= dt;
+                }
+            }
+            for(int i = nt - 1; i> 0; i--){
+                v[isrc][irec][i] = v[isrc][irec][i-1];
+            }
+            v[isrc][irec][0] = 0;
+        }
+    }
+}
 void inversionRoutine(fdat *dat, float ***u_obs_x, float ***u_obs_z){
-    int niter = 0; // move to dat: later
+    int niter = 1; // move to dat: later
 
     int &nsrc = dat->nsrc;
     int &nrec = dat->nrec;
@@ -1070,18 +1084,9 @@ void inversionRoutine(fdat *dat, float ***u_obs_x, float ***u_obs_z){
     float &dt = dat->dt;
 
     // convert velocity to displacement
-    for(int isrc = 0; isrc < nsrc; isrc++){
-        for(int irec = 0; irec < nrec; irec++){
-            for(int n = 0; n < nt; n++){
-                u_obs_x[isrc][irec][n] *= dt;
-                u_obs_z[isrc][irec][n] *= dt;
-                if(n > 0){
-                    u_obs_x[isrc][irec][n] += u_obs_x[isrc][irec][n-1];
-                    u_obs_z[isrc][irec][n] += u_obs_z[isrc][irec][n-1];
-                }
-            }
-        }
-    }
+    dat->obs_type = 1;
+    convertV2U(u_obs_x, nsrc, nrec, nt, dt);
+    convertV2U(u_obs_z, nsrc, nrec, nt, dt);
 
     float **u_syn_x = mat::createHost(nrec, nt);
     float **u_syn_z = mat::createHost(nrec, nt);
@@ -1097,8 +1102,19 @@ void inversionRoutine(fdat *dat, float ***u_obs_x, float ***u_obs_z){
             runForward(dat, isrc);
             mat::copyDeviceToHost(u_syn_x, dat->v_rec_x, nrec, nt);
             mat::copyDeviceToHost(u_syn_z, dat->v_rec_z, nrec, nt);
-            misfit += calculateMisfitPersource(u_syn_x, u_syn_z, u_obs_x[isrc], u_obs_z[isrc], tw, dt, nrec, nt);
+            for(int irec = 0; irec < nrec; irec++){
+                misfit += calculateMisfit(u_syn_x[irec], u_obs_x[isrc][irec], tw, dt, nt);
+                misfit += calculateMisfit(u_syn_z[irec], u_obs_z[isrc][irec], tw, dt, nt);
+            }
+
+            // from here: prepareAdjointSTF
+
+            // if(isrc==1){
+            //     mat::write(u_syn_x,nrec,nt,"vx_rec");
+            //     mat::write(u_obs_x[isrc],nrec,nt,"vz_rec");
+            // }
         }
+        printf("iter=%d misfit=%e\n", iter, misfit);
         if(iter == 0){
             misfit_init = misfit;
             misfit = 1;

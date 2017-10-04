@@ -260,7 +260,7 @@ for iter = istart : InvProps.niter;
         sEventRec{iter} = sEventRecIter;
         sEventAdstf{iter} = sEventAdstfIter;
 
-
+        return;
         % display misfits
         disp ' ';
         disp(['GRAVITY misfit FOR ITER ',num2str(iter,'%2u'),':   ', ...

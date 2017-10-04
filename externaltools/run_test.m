@@ -3,11 +3,20 @@ cfg = 1; clc;
 if cfg < 0
     if cfg == -1
         [v_rec,t,u_fw,v_fw]=run_forward;
-    elseif cfg <= -2
+    elseif cfg == -2
         [v_rec,t,u_fw,v_fw]=run_forward;
         stf = prepare_stf;
         stf = {stf.stf};
         K = run_adjoint(u_fw,v_fw,stf);
+    elseif cfg == -3
+        v_rec = cell(1,nrec);
+         for i=1:nrec
+           v_rec{i} = struct();
+           v_rec{i}.x = sEventRecIter(2).vel{i}.x;
+           v_rec{i}.z = sEventRecIter(2).vel{i}.z;
+         end
+        
+         disp(norm( v_rec{1}.x));
     end
 elseif cfg >= 0
     compile_cuda;
@@ -38,7 +47,7 @@ elseif cfg >= 0
     end
 end
 
-if abs(cfg) ==1
+if abs(cfg) ==1 ||cfg ==-3
     n = length(v_rec);
     for i=1:n
         subplot(n,2,i*2-1)
