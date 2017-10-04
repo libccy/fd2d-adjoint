@@ -39,6 +39,7 @@ typedef struct{
     int isrc;
     int nsrc;
     int nrec;
+    int obs_type;
 
     int *stf_type;  // host
     float *stf_PSV_x;  // host
@@ -825,10 +826,18 @@ void runWaveFieldPropagation(fdat *dat){
             updateU<<<dimGrid, dimBlock>>>(dat->uz, dat->vz, dt);
         }
         if(mode == 0){
-            saveV<<<dat->nrec, 1>>>(
-                dat->v_rec_x, dat->v_rec_y, dat->v_rec_z, dat->vx, dat->vy, dat->vz,
-                dat->rec_x_id, dat->rec_z_id, sh, psv, n
-            );
+            if(dat->obs_type == 0){
+                saveV<<<dat->nrec, 1>>>(
+                    dat->v_rec_x, dat->v_rec_y, dat->v_rec_z, dat->vx, dat->vy, dat->vz,
+                    dat->rec_x_id, dat->rec_z_id, sh, psv, n
+                );
+            }
+            else if(dat->obs_type == 1){
+                saveV<<<dat->nrec, 1>>>(
+                    dat->v_rec_x, dat->v_rec_y, dat->v_rec_z, dat->ux, dat->uy, dat->uz,
+                    dat->rec_x_id, dat->rec_z_id, sh, psv, n
+                );
+            }
             if((n + 1) % dat->sfe == 0){
                 int isfe = dat->nsfe - (n + 1) / dat->sfe;
                 if(sh){
@@ -892,6 +901,7 @@ void checkArgs(fdat *dat, int adjoint){
     dat->dx = dat->Lx / (nx - 1);
     dat->dz = dat->Lz / (nz - 1);
     dat->isrc = -1;
+    dat->obs_type = 0;
 
     if(sh){
         dat->vy = mat::create(nx, nz);
@@ -983,9 +993,8 @@ void checkArgs(fdat *dat, int adjoint){
     }
     mat::write(t, dat->nt, "t");
 }
-void runForward(fdat *dat, int isrc){
+void runForward(fdat *dat){
     dat->simulation_mode = 0;
-    dat->isrc = isrc;
     runWaveFieldPropagation(dat);
 
     // float **v_rec_x=mat::createHost(dat->nrec, dat->nt);
@@ -1013,20 +1022,51 @@ void runAdjoint(fdat *dat){
     // mat::write(dat->vx_forward, dat->nsfe, dat->nx, dat->nz, "vx");
     // mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
 }
-float calculateMisfitPercomponent(float *v_syn, float *v_obs, float dt, float nt){
+float calculateMisfitPercomponent(float *v_syn, float *v_obs, float *tw, float dt, int nt){
     // from here misfit_wavef_L2
     return 1;
 }
-float calculateMisfitPersource(float **v_syn_x, float **v_syn_z, float **v_obs_x, float **v_obs_z, float dt, float nrec, float nt){
+float calculateMisfitPersource(float **v_syn_x, float **v_syn_z, float **v_obs_x, float **v_obs_z, float *tw, float dt, int nrec, int nt){
     float misfit = 0;
     for(int irec = 0; irec < nrec; irec++){
-        misfit += calculateMisfitPercomponent(v_syn_x[irec], v_obs_x[irec], dt, nt);
-        misfit += calculateMisfitPercomponent(v_syn_z[irec], v_obs_z[irec], dt, nt);
+        misfit += calculateMisfitPercomponent(v_syn_x[irec], v_obs_x[irec], tw, dt, nt);
+        misfit += calculateMisfitPercomponent(v_syn_z[irec], v_obs_z[irec], tw, dt, nt);
     }
     return misfit;
 }
+float *getTaperWeights(float dt, int nt){
+    float t_end = (nt - 1) * dt;
+    float taper_width = t_end / 10;
+    float t_min = taper_width;
+    float t_max = t_end - taper_width;
+
+    float *tw = mat::createHost(nt);
+    for(int i = 0; i < nt; i++){
+        float t = i * dt;
+        if(t <= t_min){
+            tw[i] = 0.5 + 0.5 * cos(pi * (t_min - t) / (taper_width));
+        }
+        else if(t >= t_max){
+            tw[i] = 0.5 + 0.5 * cos(pi * (t_max - t) / (taper_width));
+        }
+        else{
+            tw[i] = 1;
+        }
+    }
+    return tw;
+}
+void u2v(float **v, float dt, int nrec, int nt){
+    for(int i = 0; i<nrec;i++){
+        for(int j=0;j<nt;j++){
+            v[i][j] *= dt;
+            if(j>1){
+                v[i][j]+=v[i][j-1];
+            }
+        }
+    }
+}
 void inversionRoutine(fdat *dat, float ***v_obs_x, float ***v_obs_z){
-    int niter = 1; // move to dat: later
+    int niter = 0; // move to dat: later
 
     int &nsrc = dat->nsrc;
     int &nrec = dat->nrec;
@@ -1037,19 +1077,23 @@ void inversionRoutine(fdat *dat, float ***v_obs_x, float ***v_obs_z){
     // int &ny = dat->nx;
     // int &nz = dat->nx;
     int &nt = dat->nt;
+    float &dt = dat->dt;
 
     float **v_syn_x = mat::createHost(nrec, nt);
     float **v_syn_z = mat::createHost(nrec, nt);
+
+    float *tw = getTaperWeights(dt, nt);
 
     float misfit_init;
 
     for(int iter = 0; iter < niter; iter++){
         float misfit = 0;
         for(int isrc = 0; isrc < nsrc; isrc++){
-            runForward(dat, isrc);
+            dat->isrc = isrc;
+            runForward(dat);
             mat::copyDeviceToHost(v_syn_x, dat->v_rec_x, nrec, nt);
             mat::copyDeviceToHost(v_syn_z, dat->v_rec_z, nrec, nt);
-            misfit += calculateMisfitPersource(v_syn_x, v_syn_z, v_obs_x[isrc], v_obs_z[isrc], dat->dt, nrec, nt);
+            misfit += calculateMisfitPersource(v_syn_x, v_syn_z, v_obs_x[isrc], v_obs_z[isrc], tw, dt, nrec, nt);
         }
         if(iter == 0){
             misfit_init = misfit;
@@ -1059,6 +1103,9 @@ void inversionRoutine(fdat *dat, float ***v_obs_x, float ***v_obs_z){
             misfit /= misfit_init;
         }
     }
+
+    mat::write(v_obs_x[0], nrec, nt, "vx_rec");
+    mat::write(v_obs_z[0], nrec, nt, "vz_rec");
 }
 void runSyntheticInvertion(fdat *dat){
     int &nsrc = dat->nsrc;
@@ -1066,13 +1113,15 @@ void runSyntheticInvertion(fdat *dat){
     int &nt = dat->nt;
 
     checkArgs(dat, 1);
+    dat->obs_type = 1;
     prepareSTF(dat); //dat->use_given_stf, sObsPerFreq: later
     dat->model_type = 13; // true model: later
     defineMaterialParameters(dat); //dat->use_given_model: later
     float ***v_obs_x=mat::createHost(nsrc, nrec, nt);
     float ***v_obs_z=mat::createHost(nsrc, nrec, nt);
     for(int isrc = 0; isrc < nsrc; isrc++){
-        runForward(dat, isrc);
+        dat->isrc = isrc;
+        runForward(dat);
         mat::copyDeviceToHost(v_obs_x[isrc], dat->v_rec_x, nrec, nt);
         mat::copyDeviceToHost(v_obs_z[isrc], dat->v_rec_z, nrec, nt);
     }
@@ -1093,7 +1142,7 @@ int main(int argc , char *argv[]){
                 checkArgs(dat, 0);
                 prepareSTF(dat);
                 defineMaterialParameters(dat);
-                runForward(dat, -1);
+                runForward(dat);
             }
         }
     }
