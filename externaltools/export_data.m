@@ -9,7 +9,6 @@ function [] = export_data(key, value)
         input_parameters;
         fid = fopen('externaltools\config','w');
 
-        data = struct();
         data.nx = nx;
         data.nz = nz;
         data.nt = nt;

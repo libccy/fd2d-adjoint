@@ -260,7 +260,6 @@ for iter = istart : InvProps.niter;
         sEventRec{iter} = sEventRecIter;
         sEventAdstf{iter} = sEventAdstfIter;
 
-        return;
         % display misfits
         disp ' ';
         disp(['GRAVITY misfit FOR ITER ',num2str(iter,'%2u'),':   ', ...
@@ -333,7 +332,9 @@ for iter = istart : InvProps.niter;
             disp ' ';
             disp(['iter ',num2str(iter),': calculating seismic kernels']);
             [Kseis_temp, sEventKnls_iter] = run_adjoint_persource(Model(iter), sEventAdstf{iter});
-
+    
+            return;
+            
             % save event kernels to a matfile
             save([output_path,'iter',num2str(iter),'.sEventKnls.mat'], 'sEventKnls_iter');
 

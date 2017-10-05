@@ -141,7 +141,7 @@ function [K2, parametrisation, which_waves, sameorownpercentile, prctiel] = chec
     K2 = K;
     parametrisation = 'rhomulambda';
     which_waves = 'total';
-    sameorownpercentile = 'same'; % 'same' or 'own'
+    sameorownpercentile = 'own'; % 'same' or 'own'
     prctiel = 99.9;
 
     nargs = length(args);

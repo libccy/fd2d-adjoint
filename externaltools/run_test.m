@@ -1,53 +1,107 @@
-cfg = 1; clc;
+clc;
+cfg = 3;
 
-if cfg < 0
-    if cfg == -1
-        [v_rec,t,u_fw,v_fw]=run_forward;
-    elseif cfg == -2
-        [v_rec,t,u_fw,v_fw]=run_forward;
-        stf = prepare_stf;
-        stf = {stf.stf};
-        K = run_adjoint(u_fw,v_fw,stf);
-    elseif cfg == -3
-        v_rec = cell(1,nrec);
-         for i=1:nrec
-           v_rec{i} = struct();
-           v_rec{i}.x = sEventRecIter(2).vel{i}.x;
-           v_rec{i}.z = sEventRecIter(2).vel{i}.z;
-         end
-        
-         disp(norm( v_rec{1}.x));
-    end
-elseif cfg >= 0
+[nx, nz, nt, nrec, nsfe, dt] = getn;
+if cfg >= 0
     compile_cuda;
-    [nx, nz, nt, nrec, nsfe]=getn; 
-    
-    if abs(cfg) < 3
-        [vx_rec, vz_rec, vx, vz, t] = run_cuda('vx_rec', 'vz_rec', 'vx', 'vz', 't');
+    if cfg == 1
+        [vx_rec, vz_rec, t] = run_cuda('vx_rec', 'vz_rec', 't');
         vx_rec = spanarr(vx_rec, nrec, nt);
         vz_rec = spanarr(vz_rec, nrec, nt);
-        vx = spanarr(vx, nsfe, nx, nz);
-        vz = spanarr(vz, nsfe, nx, nz);
+
         v_rec = cell(1,nrec);
         for i=1:nrec
-           v_rec{i} = struct();
-           v_rec{i}.x = vx_rec(i,1:nt);
-           v_rec{i}.z = vz_rec(i,1:nt);
+            v_rec{i}.x = vx_rec(i,1:nt);
+            v_rec{i}.z = vz_rec(i,1:nt);
         end
-        v_fw = struct();
+        clear('i', 'vx_rec', 'vz_rec');
+    elseif cfg == 2
+        [vx_rec, vz_rec, vx, vz, t] = run_cuda('vx_rec', 'vz_rec', 'vx', 'vz', 't');
+        vx = spanarr(vx, nsfe, nx, nz);
+        vz = spanarr(vz, nsfe, nx, nz);
         v_fw.x = vx;
         v_fw.z = vz;
-        clear('vx_rec', 'vz_rec', 'vx', 'vz');
-    else
+        clear('vx', 'vz');
+    elseif cfg == 3
         [rho, mu, lambda, t] = run_cuda('rho', 'mu', 'lambda','t');
         rho = spanarr(rho,nx,nz);
         mu = spanarr(mu,nx,nz);
         lambda = spanarr(lambda,nx,nz);
-        imagesc(lambda);
+        K.lambda.total = lambda;
+        K.mu.total = mu;
+        K.rho.total = rho;
+        plot_kernels(K);
+    elseif cfg == 4
+        [vx_syn, vx_obs, vx_stf, vz_syn, vz_obs, vz_stf, t] = run_cuda('vx_syn', 'vx_obs', 'vx_stf', 'vz_syn', 'vz_obs', 'vz_stf', 't');
+         vx_syn = spanarr(vx_syn, nrec, nt);
+         vx_obs = spanarr(vx_obs, nrec, nt);
+         vx_stf = spanarr(vx_stf, nrec, nt);
+         
+         vz_syn = spanarr(vz_syn, nrec, nt);
+         vz_obs = spanarr(vz_obs, nrec, nt);
+         vz_stf = spanarr(vz_stf, nrec, nt);
+        for i=1:nrec
+            subplot(nrec,2,i*2-1)
+            hold on
+            plot(t, vx_syn(i, 1:nt), 'r');
+            plot(t ,vx_obs(i, 1:nt), 'b');
+            plot(t, vx_stf(i, 1:nt), 'color',[1 0.5 0]);
+            xlabel('vx');
+            hold off
+
+            subplot(nrec,2,i*2)
+            hold on
+            plot(t, vz_syn(i, 1:nt), 'r');
+            plot(t ,vz_obs(i, 1:nt), 'b');
+            plot(t, vz_stf(i, 1:nt), 'color',[1 0.5 0]);
+            xlabel('vz');
+            hold off
+        end
+    else
+        [t] = run_cuda('t');
+    end
+elseif cfg < 0
+    if cfg >=-3
+        [v_rec,t,u_fw,v_fw]=run_forward;
+        if cfg == -3
+            stf = prepare_stf;
+            stf = {stf.stf};
+            K = run_adjoint(u_fw, v_fw,stf);
+        end
+    elseif cfg == -4
+        stf = sEventAdstf{1};
+        stf = stf.adstf;
+        rec = sEventRecIter(1);
+        rec = rec.vel;
+        obs = sEventObs(1);
+        obs = obs.vel;
+        for i=1:3
+            subplot(nrec,2,i*2-1)
+            hold on
+            plot(t,cumsum(rec{i}.x,2)*dt, 'r');
+            plot(t,cumsum(obs{i}.x,2)*dt, 'b');
+            plot(t, fliplr(stf{i}.x)/2, 'color',[1 0.5 0]);
+            xlabel('vx');
+            hold off
+
+            subplot(nrec,2,i*2)
+            hold on
+            plot(t,cumsum(rec{i}.z,2)*dt, 'r');
+            plot(t,cumsum(obs{i}.z,2)*dt, 'b');
+            plot(t, fliplr(stf{i}.z)/2, 'color',[1 0.5 0]);
+            xlabel('vz');
+            hold off
+        end
     end
 end
 
-if abs(cfg) ==1 ||cfg ==-3
+if abs(cfg) == 1
+    plotv(v_rec,t);
+elseif abs(cfg) == 2
+    animate_output(v_fw);
+end
+
+function [] = plotv(v_rec,t)
     n = length(v_rec);
     for i=1:n
         subplot(n,2,i*2-1)
@@ -58,12 +112,9 @@ if abs(cfg) ==1 ||cfg ==-3
         plot(t,v_rec{i}.z);
         xlabel('vz');
     end
-elseif abs(cfg) == 2
-    animate_output(v_fw);
 end
-clear('i','n','cfg');
 
-function [nx, nz, nt, nrec, nsfe] = getn() %#ok<STOUT>
+function [nx, nz, nt, nrec, nsfe, dt] = getn() %#ok<STOUT>
     input_parameters;
     nsfe = nt / store_fw_every;
 end
