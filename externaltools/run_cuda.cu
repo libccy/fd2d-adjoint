@@ -7,7 +7,7 @@
 #define devij int i = blockIdx.x, j = threadIdx.x + blockIdx.y * blockDim.x
 
 const float pi = 3.1415927;
-const int nbt = 2;
+const int nbt = 1;
 
 typedef struct{
     int nx;
@@ -474,6 +474,12 @@ __global__ void prepareAdjointSTF(float **adstf, float **u_syn, float **u_obs, f
     int irec = threadIdx.x;
     adstf[irec][nt - it - 1] = (u_syn[irec][it] - u_obs[irec][it]) * tw[it] * 2;
 }
+__global__ void normKernel(float **rho, float **mu, float **lambda, float misfit_init){
+    devij;
+    rho[i][j] /= misfit_init;
+    mu[i][j] /= misfit_init;
+    lambda[i][j] /= misfit_init;
+}
 
 fdat *importData(void){
     fdat *dat = new fdat;
@@ -763,9 +769,9 @@ void runWaveFieldPropagation(fdat *dat){
     float &dz = dat->dz;
     float &dt = dat->dt;
 
-
     dim3 dimGrid(nx, nbt);
     dim3 dimBlock(nz / nbt);
+
     initialiseDynamicFields(dat);
 
     for(int it = 0; it < dat->nt; it++){
@@ -1068,6 +1074,9 @@ void inversionRoutine(fdat *dat, float ***u_obs_x, float ***u_obs_z){
     int &nt = dat->nt;
     float &dt = dat->dt;
 
+    dim3 dimGrid(nx, nbt);
+    dim3 dimBlock(nz / nbt);
+
     // prepare syn and obs
     dat->obs_type = 1;
     convertV2U(u_obs_x, nsrc, nrec, nt, dt);
@@ -1099,35 +1108,15 @@ void inversionRoutine(fdat *dat, float ***u_obs_x, float ***u_obs_z){
                 misfit += calculateMisfit(u_syn_x[irec], u_obs_x[isrc][irec], tw, dt, nt);
                 misfit += calculateMisfit(u_syn_z[irec], u_obs_z[isrc][irec], tw, dt, nt);
             }
-            mat::copyHostToDevice(d_u_obs_x, u_obs_x[isrc], nrec, nt);
-            mat::copyHostToDevice(d_u_obs_z, u_obs_z[isrc], nrec, nt);
-            prepareAdjointSTF<<<nt, dat->nrec>>>(dat->adstf_x, dat->v_rec_x, d_u_obs_x, d_tw, nt);
-            prepareAdjointSTF<<<nt, dat->nrec>>>(dat->adstf_z, dat->v_rec_z, d_u_obs_z, d_tw, nt);
-            mat::init(dat->adstf_y, nrec, nt, 0);
 
             // if(iter < niter - 1){
+                mat::copyHostToDevice(d_u_obs_x, u_obs_x[isrc], nrec, nt);
+                mat::copyHostToDevice(d_u_obs_z, u_obs_z[isrc], nrec, nt);
+                prepareAdjointSTF<<<nt, dat->nrec>>>(dat->adstf_x, dat->v_rec_x, d_u_obs_x, d_tw, nt);
+                prepareAdjointSTF<<<nt, dat->nrec>>>(dat->adstf_z, dat->v_rec_z, d_u_obs_z, d_tw, nt);
+                mat::init(dat->adstf_y, nrec, nt, 0);
                 runAdjoint(dat, 0);
             // }
-
-            if(isrc==1){
-                // mat::write(u_syn_x, nrec,nt, "vx_syn");
-                // mat::write(u_syn_z, nrec,nt, "vz_syn");
-                // mat::write(u_obs_x[isrc], nrec,nt, "vx_obs");
-                // mat::write(u_obs_z[isrc], nrec,nt, "vz_obs");
-                // mat::copyDeviceToHost(u_syn_x, dat->adstf_x, nrec, nt);
-                // mat::copyDeviceToHost(u_syn_z, dat->adstf_z, nrec, nt);
-                // mat::write(u_syn_x, nrec,nt, "vx_stf");
-                // mat::write(u_syn_z, nrec,nt, "vz_stf");
-                float **lambda = mat::createHost(nx,nz);
-                float **mu = mat::createHost(nx,nz);
-                float **rho = mat::createHost(nx,nz);
-                mat::copyDeviceToHost(rho, dat->K_rho, dat->nx, dat->nz);
-                mat::copyDeviceToHost(mu, dat->K_mu, dat->nx, dat->nz);
-                mat::copyDeviceToHost(lambda, dat->K_lambda, dat->nx, dat->nz);
-                mat::write(rho, dat->nx, dat->nz, "rho");
-                mat::write(mu, dat->nx, dat->nz, "mu");
-                mat::write(lambda, dat->nx, dat->nz, "lambda");
-            }
         }
         printf("iter=%d misfit=%e\n", iter, misfit);
         if(iter == 0){
@@ -1137,6 +1126,19 @@ void inversionRoutine(fdat *dat, float ***u_obs_x, float ***u_obs_z){
         else{
             misfit /= misfit_init;
         }
+
+        // if(iter < niter - 1){
+            normKernel<<<dimGrid, dimBlock>>>(dat->K_rho, dat->K_mu, dat->K_lambda, misfit_init);
+            float **lambda = mat::createHost(nx,nz);
+            float **mu = mat::createHost(nx,nz);
+            float **rho = mat::createHost(nx,nz);
+            mat::copyDeviceToHost(rho, dat->K_rho, dat->nx, dat->nz);
+            mat::copyDeviceToHost(mu, dat->K_mu, dat->nx, dat->nz);
+            mat::copyDeviceToHost(lambda, dat->K_lambda, dat->nx, dat->nz);
+            mat::write(rho, dat->nx, dat->nz, "rho");
+            mat::write(mu, dat->nx, dat->nz, "mu");
+            mat::write(lambda, dat->nx, dat->nz, "lambda");
+        // }
     }
 }
 void runSyntheticInvertion(fdat *dat){
