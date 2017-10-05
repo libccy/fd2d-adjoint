@@ -42,6 +42,8 @@ typedef struct{
     int nrec;
     int obs_type;
 
+    float *tw;
+
     int *stf_type;  // host
     float *stf_PSV_x;  // host
     float *stf_PSV_z;  // host
@@ -110,6 +112,9 @@ typedef struct{
     float **v_rec_x;
     float **v_rec_y;
     float **v_rec_z;
+
+    float ***u_obs_x;
+    float ***u_obs_z;
 
     float ***ux_forward;  // host
     float ***uy_forward;  // host
@@ -478,10 +483,10 @@ __global__ void initialiseAbsorbingBoundaries(float **absbound, float width,
         }
     }
 }
-__global__ void prepareAdjointSTF(float **adstf, float **u_syn, float **u_obs, float *tw, int nt){
+__global__ void prepareAdjointSTF(float **adstf, float **u_syn, float ***u_obs, float *tw, int nt, int isrc){
     int it = blockIdx.x;
     int irec = threadIdx.x;
-    adstf[irec][nt - it - 1] = (u_syn[irec][it] - u_obs[irec][it]) * tw[it] * 2;
+    adstf[irec][nt - it - 1] = (u_syn[irec][it] - u_obs[isrc][irec][it]) * tw[it] * 2;
 }
 __global__ void normKernel(float **model, float **model_start, float misfit_init){
     devij;
@@ -523,6 +528,35 @@ __global__ void filterKernelZ(float **model, float **gtemp, float **gsum, int nz
 __global__ void updateModel(float **model, float **kernel, float step){
     devij;
     model[i][j] *= (1 - step * kernel[i][j]);
+}
+__global__ void saveDisplacementField(float ***u_obs, float **u, int isrc){
+    int it = blockIdx.x;
+    int irec = threadIdx.x;
+    u_obs[isrc][irec][it] = u[irec][it];
+}
+__global__ void getTaperWeights(float *tw, float dt, int nt){
+    int it = blockIdx.x;
+
+    float t_end = (nt - 1) * dt;
+    float taper_width = t_end / 10;
+    float t_min = taper_width;
+    float t_max = t_end - taper_width;
+
+    float t = it * dt;
+    if(t <= t_min){
+        tw[it] = 0.5 + 0.5 * cosf(d_pi * (t_min - t) / (taper_width));
+    }
+    else if(t >= t_max){
+        tw[it] = 0.5 + 0.5 * cosf(d_pi * (t_max - t) / (taper_width));
+    }
+    else{
+        tw[it] = 1;
+    }
+}
+__global__ void calculateMisfit(float *misfit, float **u_syn, float ***u_obs, float *tw, float dt, int isrc, int irec){
+    int it = blockIdx.x;
+    float wavedif = (u_syn[irec][it] - u_obs[isrc][irec][it]) * tw[it];
+    misfit[it] += wavedif * wavedif * dt;
 }
 
 fdat *importData(void){
@@ -1064,106 +1098,62 @@ void runAdjoint(fdat *dat, int init_kernel){
     // mat::write(dat->vx_forward, dat->nsfe, dat->nx, dat->nz, "vx");
     // mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
 }
-float calculateMisfit(float *u_syn, float *u_obs, float *tw, float dt, int nt){
-    float misfit = 0;
-    for(int it = 1; it < nt; it++){
-        float wavedif = (u_syn[it] - u_obs[it]) * tw[it];
-        misfit += wavedif * wavedif * dt;
-    }
-    return misfit;
-}
-float *getTaperWeights(float dt, int nt){
-    float t_end = (nt - 1) * dt;
-    float taper_width = t_end / 10;
-    float t_min = taper_width;
-    float t_max = t_end - taper_width;
-
-    float *tw = mat::createHost(nt);
-    for(int it = 0; it < nt; it++){
-        float t = it * dt;
-        if(t <= t_min){
-            tw[it] = 0.5 + 0.5 * cos(pi * (t_min - t) / (taper_width));
-        }
-        else if(t >= t_max){
-            tw[it] = 0.5 + 0.5 * cos(pi * (t_max - t) / (taper_width));
-        }
-        else{
-            tw[it] = 1;
-        }
-    }
-    return tw;
-}
-void convertV2U(float ***v, int nsrc, int nrec, int nt, float dt){
-    for(int isrc = 0; isrc < nsrc; isrc++){
-        for(int irec = 0; irec < nrec; irec++){
-            for(int it = 0; it < nt; it++){
-                v[isrc][irec][it] *= dt;
-                if(it > 0){
-                    v[isrc][irec][it] += + v[isrc][irec][it-1];
-                }
-            }
-        }
-    }
-}
-float calculateMisfitPerstep(fdat *dat, float ****u_obs, float **u_syn_x, float **u_syn_z, float *tw){
+// float calculateMisfit(fdat *dat, float ****u_obs, float **u_syn_x, float **u_syn_z, float *tw){
+//     int &nsrc = dat->nsrc;
+//     int &nrec = dat->nrec;
+//     int &nt = dat->nt;
+//     float &dt = dat->dt;
+//
+//     float misfit = 0;
+//     for(int isrc = 0; isrc < nsrc; isrc++){
+//         runForward(dat, isrc);
+//         mat::copyDeviceToHost(u_syn_x, dat->v_rec_x, nrec, nt);
+//         mat::copyDeviceToHost(u_syn_z, dat->v_rec_z, nrec, nt);
+//         for(int irec = 0; irec < nrec; irec++){
+//             misfit += calculateMisfit(u_syn_x[irec], u_obs[0][isrc][irec], tw, dt, nt);
+//             misfit += calculateMisfit(u_syn_z[irec], u_obs[1][isrc][irec], tw, dt, nt);
+//         }
+//     }
+//     return misfit;
+// }
+float computeKernels(fdat *dat){
     int &nsrc = dat->nsrc;
     int &nrec = dat->nrec;
     int &nt = dat->nt;
     float &dt = dat->dt;
 
-    float misfit = 0;
+    float *d_misfit = mat::create(nt);
+    float *h_misfit = mat::createHost(nt);
+    mat::init(d_misfit, nt, 0);
+
+    initialiseKernels(dat);
     for(int isrc = 0; isrc < nsrc; isrc++){
         runForward(dat, isrc);
-        mat::copyDeviceToHost(u_syn_x, dat->v_rec_x, nrec, nt);
-        mat::copyDeviceToHost(u_syn_z, dat->v_rec_z, nrec, nt);
         for(int irec = 0; irec < nrec; irec++){
-            misfit += calculateMisfit(u_syn_x[irec], u_obs[0][isrc][irec], tw, dt, nt);
-            misfit += calculateMisfit(u_syn_z[irec], u_obs[1][isrc][irec], tw, dt, nt);
+            calculateMisfit<<<nt, 1>>>(d_misfit, dat->v_rec_x, dat->u_obs_x, dat->tw, dt, isrc, irec);
+            calculateMisfit<<<nt, 1>>>(d_misfit, dat->v_rec_z, dat->u_obs_z, dat->tw, dt, isrc, irec);
         }
+
+        prepareAdjointSTF<<<nt, nrec>>>(dat->adstf_x, dat->v_rec_x, dat->u_obs_x, dat->tw, nt, isrc);
+        prepareAdjointSTF<<<nt, nrec>>>(dat->adstf_z, dat->v_rec_z, dat->u_obs_z, dat->tw, nt, isrc);
+        mat::init(dat->adstf_y, nrec, nt, 0);
+        runAdjoint(dat, 0);
     }
+
+    mat::copyDeviceToHost(h_misfit, d_misfit, nt);
+
+    float misfit = 0;
+    for(int i = 0; i< nt; i++){
+        misfit += h_misfit[i];
+    }
+    free(h_misfit);
+    cudaFree(d_misfit);
+
     return misfit;
 }
-float fitPolynomial(float *steplnArray, float *misfitArray, int nsteps, float *p){
-    for(int i=0;i<nsteps;i++){
-        printf("misfit = %e\n", misfitArray[i] / misfitArray[0]);
-    }
-    return 1;
-}
-float calculateStepLength(fdat *dat, float ****u_obs, float **u_syn_x, float **u_syn_z, float *tw, float teststep, int iter, float currentMisfit){
-    int &nx = dat->nx;
-    int &nz = dat->nz;
-
-    dim3 dimGrid(nx, nbt);
-    dim3 dimBlock(nz / nbt);
-
-    int nsteps = iter?3:5;
-    teststep = fabs(teststep);
-    float *steplnArray = mat::createHost(nsteps);
-    float *misfitArray = mat::createHost(nsteps);
-    for(int i = 0; i < nsteps; i++){
-        steplnArray[i] = 2 * i * teststep / (nsteps - 1);
-    }
-    misfitArray[0] = currentMisfit;
-
-    for(int ntry = 1; ntry < nsteps; ntry++){
-        float step = steplnArray[ntry] - steplnArray[ntry-1];
-        updateModel<<<dimGrid, dimBlock>>>(dat->rho, dat->K_rho, step);
-        updateModel<<<dimGrid, dimBlock>>>(dat->mu, dat->K_mu, step);
-        updateModel<<<dimGrid, dimBlock>>>(dat->lambda, dat->K_lambda, step);
-        misfitArray[ntry] = calculateMisfitPerstep(dat, u_obs, u_syn_x, u_syn_z, tw);
-    }
-
-    float *p = mat::createHost(3);
-    float step = fitPolynomial(steplnArray, misfitArray, nsteps, p);
-    free(p);
-
-    return teststep;
-}
-void inversionRoutine(fdat *dat, float ****u_obs, int optimization_method, float teststep){
+void inversionRoutine(fdat *dat){
     int niter = 1; // move to dat: later
 
-    int &nsrc = dat->nsrc;
-    int &nrec = dat->nrec;
     // int &sh = dat->wave_propagation_sh; // sh: later
     // int &psv = dat->wave_propagation_psv;
 
@@ -1175,16 +1165,7 @@ void inversionRoutine(fdat *dat, float ****u_obs, int optimization_method, float
     dim3 dimGrid(nx, nbt);
     dim3 dimBlock(nz / nbt);
 
-    // prepare syn and obs
     dat->obs_type = 1;
-    convertV2U(u_obs[0], nsrc, nrec, nt, dt);
-    convertV2U(u_obs[1], nsrc, nrec, nt, dt);
-
-    float **u_syn_x = mat::createHost(nrec, nt);
-    float **u_syn_z = mat::createHost(nrec, nt);
-
-    float **u_obs_x = mat::create(nrec, nt);
-    float **u_obs_z = mat::create(nrec, nt);
 
     // model start
     float **rho_start = mat::create(nx, nz);
@@ -1195,9 +1176,8 @@ void inversionRoutine(fdat *dat, float ****u_obs, int optimization_method, float
     mat::copy(lambda_start, dat->lambda, nx, nz);
 
     // taper weights
-    float *tw = getTaperWeights(dt, nt);
-    float *d_tw = mat::create(nt);
-    mat::copyHostToDevice(d_tw, tw, nt);
+    dat->tw = mat::create(nt);
+    getTaperWeights<<<nt, 1>>>(dat->tw, dt, nt);
 
     // gaussian filter
     int sigma = 2;
@@ -1205,61 +1185,36 @@ void inversionRoutine(fdat *dat, float ****u_obs, int optimization_method, float
     float **gtemp = mat::create(nx, nz);
     initialiseGaussian<<<dimGrid, dimBlock>>>(gsum, nx, nz, sigma);
 
-    float misfit;
-    float misfit_init;
+    float misfit_init = computeKernels(dat);
+    float misfit = misfit_init;
 
     for(int iter = 0; iter < niter; iter++){
-        misfit = 0;
-        initialiseKernels(dat);
-        for(int isrc = 0; isrc < nsrc; isrc++){
-            runForward(dat, isrc);
-            mat::copyDeviceToHost(u_syn_x, dat->v_rec_x, nrec, nt);
-            mat::copyDeviceToHost(u_syn_z, dat->v_rec_z, nrec, nt);
-            for(int irec = 0; irec < nrec; irec++){
-                misfit += calculateMisfit(u_syn_x[irec], u_obs[0][isrc][irec], tw, dt, nt);
-                misfit += calculateMisfit(u_syn_z[irec], u_obs[1][isrc][irec], tw, dt, nt);
-            }
+        normKernel<<<dimGrid, dimBlock>>>(dat->K_rho, rho_start, misfit_init);
+        normKernel<<<dimGrid, dimBlock>>>(dat->K_mu, mu_start, misfit_init);
+        normKernel<<<dimGrid, dimBlock>>>(dat->K_lambda, lambda_start, misfit_init);
+        filterKernelX<<<dimGrid, dimBlock>>>(dat->K_rho, gtemp, nx, sigma);
+        filterKernelZ<<<dimGrid, dimBlock>>>(dat->K_rho, gtemp, gsum, nz, sigma);
+        filterKernelX<<<dimGrid, dimBlock>>>(dat->K_mu, gtemp, nx, sigma);
+        filterKernelZ<<<dimGrid, dimBlock>>>(dat->K_mu, gtemp, gsum, nz, sigma);
+        filterKernelX<<<dimGrid, dimBlock>>>(dat->K_lambda, gtemp, nx, sigma);
+        filterKernelZ<<<dimGrid, dimBlock>>>(dat->K_lambda, gtemp, gsum, nz, sigma);
 
-            // if(iter < niter - 1){
-                mat::copyHostToDevice(u_obs_x, u_obs[0][isrc], nrec, nt);
-                mat::copyHostToDevice(u_obs_z, u_obs[1][isrc], nrec, nt);
-                prepareAdjointSTF<<<nt, dat->nrec>>>(dat->adstf_x, dat->v_rec_x, u_obs_x, d_tw, nt);
-                prepareAdjointSTF<<<nt, dat->nrec>>>(dat->adstf_z, dat->v_rec_z, u_obs_z, d_tw, nt);
-                mat::init(dat->adstf_y, nrec, nt, 0);
-                runAdjoint(dat, 0);
-            // }
-        }
-        if(iter == 0){
-            misfit_init = misfit;
-        }
+        float **lambda = mat::createHost(nx,nz);
+        float **mu = mat::createHost(nx,nz);
+        float **rho = mat::createHost(nx,nz);
+        mat::copyDeviceToHost(rho, dat->K_rho, dat->nx, dat->nz);
+        mat::copyDeviceToHost(mu, dat->K_mu, dat->nx, dat->nz);
+        mat::copyDeviceToHost(lambda, dat->K_lambda, dat->nx, dat->nz);
+        mat::write(rho, dat->nx, dat->nz, "rho");
+        mat::write(mu, dat->nx, dat->nz, "mu");
+        mat::write(lambda, dat->nx, dat->nz, "lambda");
 
-        // if(iter < niter - 1){
-            normKernel<<<dimGrid, dimBlock>>>(dat->K_rho, rho_start, misfit_init);
-            normKernel<<<dimGrid, dimBlock>>>(dat->K_mu, mu_start, misfit_init);
-            normKernel<<<dimGrid, dimBlock>>>(dat->K_lambda, lambda_start, misfit_init);
-            filterKernelX<<<dimGrid, dimBlock>>>(dat->K_rho, gtemp, nx, sigma);
-            filterKernelZ<<<dimGrid, dimBlock>>>(dat->K_rho, gtemp, gsum, nz, sigma);
-            filterKernelX<<<dimGrid, dimBlock>>>(dat->K_mu, gtemp, nx, sigma);
-            filterKernelZ<<<dimGrid, dimBlock>>>(dat->K_mu, gtemp, gsum, nz, sigma);
-            filterKernelX<<<dimGrid, dimBlock>>>(dat->K_lambda, gtemp, nx, sigma);
-            filterKernelZ<<<dimGrid, dimBlock>>>(dat->K_lambda, gtemp, gsum, nz, sigma);
-            teststep = calculateStepLength(dat, u_obs, u_syn_x, u_syn_z, tw, teststep, iter, misfit);
-
-            // float **lambda = mat::createHost(nx,nz);
-            // float **mu = mat::createHost(nx,nz);
-            // float **rho = mat::createHost(nx,nz);
-            // mat::copyDeviceToHost(rho, dat->K_rho, dat->nx, dat->nz);
-            // mat::copyDeviceToHost(mu, dat->K_mu, dat->nx, dat->nz);
-            // mat::copyDeviceToHost(lambda, dat->K_lambda, dat->nx, dat->nz);
-            // mat::write(rho, dat->nx, dat->nz, "rho");
-            // mat::write(mu, dat->nx, dat->nz, "mu");
-            // mat::write(lambda, dat->nx, dat->nz, "lambda");
-
-
-        // }
-
+        // misfit /= misfit_init;
         printf("iter=%d misfit=%e\n", iter, misfit);
-        misfit /= misfit_init;
+
+        if(iter < niter - 1){
+            misfit = computeKernels(dat);
+        }
     }
 }
 void runSyntheticInvertion(fdat *dat){
@@ -1268,22 +1223,21 @@ void runSyntheticInvertion(fdat *dat){
     int &nt = dat->nt;
 
     checkArgs(dat, 1);
+    dat->obs_type = 1;
     dat->model_type = 13; // true model: later
     prepareSTF(dat); // dat->use_given_stf, sObsPerFreq: later
     defineMaterialParameters(dat); // dat->use_given_model: later
-    float ***v_obs[] = {
-        mat::createHost(nsrc, nrec, nt),
-        mat::createHost(nsrc, nrec, nt)
-    }; // move to device memory: later
+    dat->u_obs_x = mat::create(nsrc, nrec, nt);
+    dat->u_obs_z = mat::create(nsrc, nrec, nt);
     for(int isrc = 0; isrc < nsrc; isrc++){
         runForward(dat, isrc);
-        mat::copyDeviceToHost(v_obs[0][isrc], dat->v_rec_x, nrec, nt);
-        mat::copyDeviceToHost(v_obs[1][isrc], dat->v_rec_z, nrec, nt);
+        saveDisplacementField<<<nt, nrec>>>(dat->u_obs_x, dat->v_rec_x, isrc);
+        saveDisplacementField<<<nt, nrec>>>(dat->u_obs_z, dat->v_rec_z, isrc);
     }
 
     dat->model_type = 10;
     defineMaterialParameters(dat);
-    inversionRoutine(dat, v_obs, 0, 0.004);
+    inversionRoutine(dat);
 }
 
 int main(int argc , char *argv[]){
