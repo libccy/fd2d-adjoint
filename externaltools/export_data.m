@@ -20,6 +20,8 @@ function [] = export_data(key, value)
         data.use_given_stf = 0;
         data.model_type = model_type;
         data.order = order;
+        dat.obs_type = 0;
+        dat.optimization_method = 0;
         
         data.sfe = store_fw_every;
         data.src_info = src_info;

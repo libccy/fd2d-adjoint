@@ -28,6 +28,7 @@ typedef struct{
     int simulation_mode;
     int use_given_model;
     int use_given_stf;
+    int optimization_method;
     float source_amplitude;
 
     int absorb_left;
@@ -517,6 +518,8 @@ fdat *importData(void){
             dat->use_given_stf = root["use_given_stf"];
             dat->source_amplitude = root["source_amplitude"];
             dat->order = root["order"]; // order = 2: later
+            dat->obs_type = root["obs_type"];
+            dat->optimization_method = root["optimization_method"];
 
             dat->absorb_left = root["absorb_left"];
             dat->absorb_right = root["absorb_right"];
@@ -895,7 +898,6 @@ void checkArgs(fdat *dat, int adjoint){
     dat->nsfe = dat->nt / dat->sfe;
     dat->dx = dat->Lx / (nx - 1);
     dat->dz = dat->Lz / (nz - 1);
-    dat->obs_type = 0;
 
     if(sh){
         dat->vy = mat::create(nx, nz);
@@ -1093,13 +1095,12 @@ void inversionRoutine(fdat *dat, float ***u_obs_x, float ***u_obs_z){
     float *d_tw = mat::create(nt);
     mat::copyHostToDevice(d_tw, tw, nt);
 
-    // kernels
-    initialiseKernels(dat);
-
+    float misfit;
     float misfit_init;
 
     for(int iter = 0; iter < niter; iter++){
-        float misfit = 0;
+        misfit = 0;
+        initialiseKernels(dat);
         for(int isrc = 0; isrc < nsrc; isrc++){
             runForward(dat, isrc);
             mat::copyDeviceToHost(u_syn_x, dat->v_rec_x, nrec, nt);
@@ -1129,15 +1130,18 @@ void inversionRoutine(fdat *dat, float ***u_obs_x, float ***u_obs_z){
 
         // if(iter < niter - 1){
             normKernel<<<dimGrid, dimBlock>>>(dat->K_rho, dat->K_mu, dat->K_lambda, misfit_init);
-            float **lambda = mat::createHost(nx,nz);
-            float **mu = mat::createHost(nx,nz);
-            float **rho = mat::createHost(nx,nz);
-            mat::copyDeviceToHost(rho, dat->K_rho, dat->nx, dat->nz);
-            mat::copyDeviceToHost(mu, dat->K_mu, dat->nx, dat->nz);
-            mat::copyDeviceToHost(lambda, dat->K_lambda, dat->nx, dat->nz);
-            mat::write(rho, dat->nx, dat->nz, "rho");
-            mat::write(mu, dat->nx, dat->nz, "mu");
-            mat::write(lambda, dat->nx, dat->nz, "lambda");
+
+            // float **lambda = mat::createHost(nx,nz);
+            // float **mu = mat::createHost(nx,nz);
+            // float **rho = mat::createHost(nx,nz);
+            // mat::copyDeviceToHost(rho, dat->K_rho, dat->nx, dat->nz);
+            // mat::copyDeviceToHost(mu, dat->K_mu, dat->nx, dat->nz);
+            // mat::copyDeviceToHost(lambda, dat->K_lambda, dat->nx, dat->nz);
+            // mat::write(rho, dat->nx, dat->nz, "rho");
+            // mat::write(mu, dat->nx, dat->nz, "mu");
+            // mat::write(lambda, dat->nx, dat->nz, "lambda");
+
+
         // }
     }
 }
