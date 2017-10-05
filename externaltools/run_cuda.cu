@@ -8,6 +8,7 @@
 
 const float pi = 3.1415927;
 const int nbt = 1;
+__constant__ float d_pi = 3.1415927;
 
 typedef struct{
     int nx;
@@ -28,7 +29,6 @@ typedef struct{
     int simulation_mode;
     int use_given_model;
     int use_given_stf;
-    int optimization_method;
     float source_amplitude;
 
     int absorb_left;
@@ -139,6 +139,10 @@ namespace mat{
     __global__ void _setPointerValue(float ***mat, float **data, const int i){
         mat[i] = data;
     }
+    __global__ void _copy(float **mat, float **init){
+        devij;
+        mat[i][j] = init[i][j];
+    }
 
 
     float *init(float *mat, const int m, const float init){
@@ -229,6 +233,10 @@ namespace mat{
     	return (int *)malloc(m * sizeof(int));
     }
 
+    void copy(float **mat, float **init, const int m, const int n){
+        dim3 dimGrid(m, nbt);
+        mat::_copy<<<dimGrid, n / nbt>>>(mat, init);
+    }
     void copyHostToDevice(float *d_a, const float *a, const int m){
         cudaMemcpy(d_a, a , m * sizeof(float), cudaMemcpyHostToDevice);
     }
@@ -475,11 +483,46 @@ __global__ void prepareAdjointSTF(float **adstf, float **u_syn, float **u_obs, f
     int irec = threadIdx.x;
     adstf[irec][nt - it - 1] = (u_syn[irec][it] - u_obs[irec][it]) * tw[it] * 2;
 }
-__global__ void normKernel(float **rho, float **mu, float **lambda, float misfit_init){
+__global__ void normKernel(float **model, float **model_start, float misfit_init){
     devij;
-    rho[i][j] /= misfit_init;
-    mu[i][j] /= misfit_init;
-    lambda[i][j] /= misfit_init;
+    model[i][j] *= model_start[i][j] / misfit_init;
+}
+__device__ float gaussian(int x, int sigma){
+    float xf = (float)x;
+    float sigmaf = (float)sigma;
+    return (1 / (sqrtf(2 * d_pi) * sigmaf)) * expf(-xf * xf / (2 * sigmaf * sigmaf));
+}
+__global__ void initialiseGaussian(float **model, int nx, int nz, int sigma){
+    devij;
+    float sumx = 0;
+    for(int n = 0; n < nx; n++){
+        sumx += gaussian(i - n, sigma);
+    }
+    float sumz = 0;
+    for(int n = 0; n < nz; n++){
+        sumz += gaussian(j - n, sigma);
+    }
+    model[i][j] = sumx * sumz;
+}
+__global__ void filterKernelX(float **model, float **gtemp, int nx, int sigma){
+    devij;
+    float sumx = 0;
+    for(int n = 0; n < nx; n++){
+        sumx += gaussian(i - n, sigma) * model[n][j];
+    }
+    gtemp[i][j] = sumx;
+}
+__global__ void filterKernelZ(float **model, float **gtemp, float **gsum, int nz, int sigma){
+    devij;
+    float sumz = 0;
+    for(int n = 0; n < nz; n++){
+        sumz += gaussian(j - n, sigma) * gtemp[i][n];
+    }
+    model[i][j] = sumz / gsum[i][j];
+}
+__global__ void updateModel(float **model, float **kernel, float step){
+    devij;
+    model[i][j] *= (1 - step * kernel[i][j]);
 }
 
 fdat *importData(void){
@@ -519,7 +562,6 @@ fdat *importData(void){
             dat->source_amplitude = root["source_amplitude"];
             dat->order = root["order"]; // order = 2: later
             dat->obs_type = root["obs_type"];
-            dat->optimization_method = root["optimization_method"];
 
             dat->absorb_left = root["absorb_left"];
             dat->absorb_right = root["absorb_right"];
@@ -1063,7 +1105,61 @@ void convertV2U(float ***v, int nsrc, int nrec, int nt, float dt){
         }
     }
 }
-void inversionRoutine(fdat *dat, float ***u_obs_x, float ***u_obs_z){
+float calculateMisfitPerstep(fdat *dat, float ****u_obs, float **u_syn_x, float **u_syn_z, float *tw){
+    int &nsrc = dat->nsrc;
+    int &nrec = dat->nrec;
+    int &nt = dat->nt;
+    float &dt = dat->dt;
+
+    float misfit = 0;
+    for(int isrc = 0; isrc < nsrc; isrc++){
+        runForward(dat, isrc);
+        mat::copyDeviceToHost(u_syn_x, dat->v_rec_x, nrec, nt);
+        mat::copyDeviceToHost(u_syn_z, dat->v_rec_z, nrec, nt);
+        for(int irec = 0; irec < nrec; irec++){
+            misfit += calculateMisfit(u_syn_x[irec], u_obs[0][isrc][irec], tw, dt, nt);
+            misfit += calculateMisfit(u_syn_z[irec], u_obs[1][isrc][irec], tw, dt, nt);
+        }
+    }
+    return misfit;
+}
+float fitPolynomial(float *steplnArray, float *misfitArray, int nsteps, float *p){
+    for(int i=0;i<nsteps;i++){
+        printf("misfit = %e\n", misfitArray[i] / misfitArray[0]);
+    }
+    return 1;
+}
+float calculateStepLength(fdat *dat, float ****u_obs, float **u_syn_x, float **u_syn_z, float *tw, float teststep, int iter, float currentMisfit){
+    int &nx = dat->nx;
+    int &nz = dat->nz;
+
+    dim3 dimGrid(nx, nbt);
+    dim3 dimBlock(nz / nbt);
+
+    int nsteps = iter?3:5;
+    teststep = fabs(teststep);
+    float *steplnArray = mat::createHost(nsteps);
+    float *misfitArray = mat::createHost(nsteps);
+    for(int i = 0; i < nsteps; i++){
+        steplnArray[i] = 2 * i * teststep / (nsteps - 1);
+    }
+    misfitArray[0] = currentMisfit;
+
+    for(int ntry = 1; ntry < nsteps; ntry++){
+        float step = steplnArray[ntry] - steplnArray[ntry-1];
+        updateModel<<<dimGrid, dimBlock>>>(dat->rho, dat->K_rho, step);
+        updateModel<<<dimGrid, dimBlock>>>(dat->mu, dat->K_mu, step);
+        updateModel<<<dimGrid, dimBlock>>>(dat->lambda, dat->K_lambda, step);
+        misfitArray[ntry] = calculateMisfitPerstep(dat, u_obs, u_syn_x, u_syn_z, tw);
+    }
+
+    float *p = mat::createHost(3);
+    float step = fitPolynomial(steplnArray, misfitArray, nsteps, p);
+    free(p);
+
+    return teststep;
+}
+void inversionRoutine(fdat *dat, float ****u_obs, int optimization_method, float teststep){
     int niter = 1; // move to dat: later
 
     int &nsrc = dat->nsrc;
@@ -1081,19 +1177,33 @@ void inversionRoutine(fdat *dat, float ***u_obs_x, float ***u_obs_z){
 
     // prepare syn and obs
     dat->obs_type = 1;
-    convertV2U(u_obs_x, nsrc, nrec, nt, dt);
-    convertV2U(u_obs_z, nsrc, nrec, nt, dt);
+    convertV2U(u_obs[0], nsrc, nrec, nt, dt);
+    convertV2U(u_obs[1], nsrc, nrec, nt, dt);
 
     float **u_syn_x = mat::createHost(nrec, nt);
     float **u_syn_z = mat::createHost(nrec, nt);
 
-    float **d_u_obs_x = mat::create(nrec, nt);
-    float **d_u_obs_z = mat::create(nrec, nt);
+    float **u_obs_x = mat::create(nrec, nt);
+    float **u_obs_z = mat::create(nrec, nt);
+
+    // model start
+    float **rho_start = mat::create(nx, nz);
+    float **mu_start = mat::create(nx, nz);
+    float **lambda_start = mat::create(nx, nz);
+    mat::copy(rho_start, dat->rho, nx, nz);
+    mat::copy(mu_start, dat->mu, nx, nz);
+    mat::copy(lambda_start, dat->lambda, nx, nz);
 
     // taper weights
     float *tw = getTaperWeights(dt, nt);
     float *d_tw = mat::create(nt);
     mat::copyHostToDevice(d_tw, tw, nt);
+
+    // gaussian filter
+    int sigma = 2;
+    float **gsum = mat::create(nx, nz);
+    float **gtemp = mat::create(nx, nz);
+    initialiseGaussian<<<dimGrid, dimBlock>>>(gsum, nx, nz, sigma);
 
     float misfit;
     float misfit_init;
@@ -1106,30 +1216,34 @@ void inversionRoutine(fdat *dat, float ***u_obs_x, float ***u_obs_z){
             mat::copyDeviceToHost(u_syn_x, dat->v_rec_x, nrec, nt);
             mat::copyDeviceToHost(u_syn_z, dat->v_rec_z, nrec, nt);
             for(int irec = 0; irec < nrec; irec++){
-                misfit += calculateMisfit(u_syn_x[irec], u_obs_x[isrc][irec], tw, dt, nt);
-                misfit += calculateMisfit(u_syn_z[irec], u_obs_z[isrc][irec], tw, dt, nt);
+                misfit += calculateMisfit(u_syn_x[irec], u_obs[0][isrc][irec], tw, dt, nt);
+                misfit += calculateMisfit(u_syn_z[irec], u_obs[1][isrc][irec], tw, dt, nt);
             }
 
             // if(iter < niter - 1){
-                mat::copyHostToDevice(d_u_obs_x, u_obs_x[isrc], nrec, nt);
-                mat::copyHostToDevice(d_u_obs_z, u_obs_z[isrc], nrec, nt);
-                prepareAdjointSTF<<<nt, dat->nrec>>>(dat->adstf_x, dat->v_rec_x, d_u_obs_x, d_tw, nt);
-                prepareAdjointSTF<<<nt, dat->nrec>>>(dat->adstf_z, dat->v_rec_z, d_u_obs_z, d_tw, nt);
+                mat::copyHostToDevice(u_obs_x, u_obs[0][isrc], nrec, nt);
+                mat::copyHostToDevice(u_obs_z, u_obs[1][isrc], nrec, nt);
+                prepareAdjointSTF<<<nt, dat->nrec>>>(dat->adstf_x, dat->v_rec_x, u_obs_x, d_tw, nt);
+                prepareAdjointSTF<<<nt, dat->nrec>>>(dat->adstf_z, dat->v_rec_z, u_obs_z, d_tw, nt);
                 mat::init(dat->adstf_y, nrec, nt, 0);
                 runAdjoint(dat, 0);
             // }
         }
-        printf("iter=%d misfit=%e\n", iter, misfit);
         if(iter == 0){
             misfit_init = misfit;
-            misfit = 1;
-        }
-        else{
-            misfit /= misfit_init;
         }
 
         // if(iter < niter - 1){
-            normKernel<<<dimGrid, dimBlock>>>(dat->K_rho, dat->K_mu, dat->K_lambda, misfit_init);
+            normKernel<<<dimGrid, dimBlock>>>(dat->K_rho, rho_start, misfit_init);
+            normKernel<<<dimGrid, dimBlock>>>(dat->K_mu, mu_start, misfit_init);
+            normKernel<<<dimGrid, dimBlock>>>(dat->K_lambda, lambda_start, misfit_init);
+            filterKernelX<<<dimGrid, dimBlock>>>(dat->K_rho, gtemp, nx, sigma);
+            filterKernelZ<<<dimGrid, dimBlock>>>(dat->K_rho, gtemp, gsum, nz, sigma);
+            filterKernelX<<<dimGrid, dimBlock>>>(dat->K_mu, gtemp, nx, sigma);
+            filterKernelZ<<<dimGrid, dimBlock>>>(dat->K_mu, gtemp, gsum, nz, sigma);
+            filterKernelX<<<dimGrid, dimBlock>>>(dat->K_lambda, gtemp, nx, sigma);
+            filterKernelZ<<<dimGrid, dimBlock>>>(dat->K_lambda, gtemp, gsum, nz, sigma);
+            teststep = calculateStepLength(dat, u_obs, u_syn_x, u_syn_z, tw, teststep, iter, misfit);
 
             // float **lambda = mat::createHost(nx,nz);
             // float **mu = mat::createHost(nx,nz);
@@ -1143,6 +1257,9 @@ void inversionRoutine(fdat *dat, float ***u_obs_x, float ***u_obs_z){
 
 
         // }
+
+        printf("iter=%d misfit=%e\n", iter, misfit);
+        misfit /= misfit_init;
     }
 }
 void runSyntheticInvertion(fdat *dat){
@@ -1150,21 +1267,23 @@ void runSyntheticInvertion(fdat *dat){
     int &nrec = dat->nrec;
     int &nt = dat->nt;
 
-    checkArgs(dat, 1); // obs_type set to 0
+    checkArgs(dat, 1);
     dat->model_type = 13; // true model: later
-    prepareSTF(dat); //dat->use_given_stf, sObsPerFreq: later
-    defineMaterialParameters(dat); //dat->use_given_model: later
-    float ***v_obs_x=mat::createHost(nsrc, nrec, nt);
-    float ***v_obs_z=mat::createHost(nsrc, nrec, nt);
+    prepareSTF(dat); // dat->use_given_stf, sObsPerFreq: later
+    defineMaterialParameters(dat); // dat->use_given_model: later
+    float ***v_obs[] = {
+        mat::createHost(nsrc, nrec, nt),
+        mat::createHost(nsrc, nrec, nt)
+    }; // move to device memory: later
     for(int isrc = 0; isrc < nsrc; isrc++){
         runForward(dat, isrc);
-        mat::copyDeviceToHost(v_obs_x[isrc], dat->v_rec_x, nrec, nt);
-        mat::copyDeviceToHost(v_obs_z[isrc], dat->v_rec_z, nrec, nt);
+        mat::copyDeviceToHost(v_obs[0][isrc], dat->v_rec_x, nrec, nt);
+        mat::copyDeviceToHost(v_obs[1][isrc], dat->v_rec_z, nrec, nt);
     }
 
     dat->model_type = 10;
     defineMaterialParameters(dat);
-    inversionRoutine(dat, v_obs_x, v_obs_z);
+    inversionRoutine(dat, v_obs, 0, 0.004);
 }
 
 int main(int argc , char *argv[]){
