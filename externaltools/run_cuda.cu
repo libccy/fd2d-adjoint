@@ -10,7 +10,7 @@ const float pi = 3.1415927;
 const int nbt = 1;
 __constant__ float d_pi = 3.1415927;
 
-typedef struct{
+namespace dat{
     int nx;
     int nz;
     int nt;
@@ -123,8 +123,7 @@ typedef struct{
     float ***vx_forward;  // host
     float ***vy_forward;  // host
     float ***vz_forward;  // host
-} fdat;
-fdat *dat = new fdat;
+}
 
 namespace mat{
     __global__ void _setValue(float *mat, const float init){
@@ -569,7 +568,7 @@ __global__ void calculateMisfit(float *misfit, float **u_syn, float ***u_obs, fl
     misfit[it] += wavedif * wavedif * dt;
 }
 
-void *importData(){
+void importData(){
     FILE *datfile = fopen("externaltools/config","r");
 
     char *buffer = 0;
@@ -591,99 +590,99 @@ void *importData(){
             printf("parseObject() failed\n");
         }
         else{
-            dat->nx = root["nx"];
-            dat->nz = root["nz"];
-            dat->nt = root["nt"];
-            dat->dt = root["dt"];
-            dat->Lx = root["Lx"];
-            dat->Lz = root["Lz"];
-            dat->sfe = root["sfe"];
+            dat::nx = root["nx"];
+            dat::nz = root["nz"];
+            dat::nt = root["nt"];
+            dat::dt = root["dt"];
+            dat::Lx = root["Lx"];
+            dat::Lz = root["Lz"];
+            dat::sfe = root["sfe"];
 
-            dat->model_type = root["model_type"];
-            dat->use_given_model = root["use_given_model"];
-            dat->use_given_stf = root["use_given_stf"];
-            dat->source_amplitude = root["source_amplitude"];
-            dat->order = root["order"]; // order = 2: later
-            dat->obs_type = root["obs_type"];
+            dat::model_type = root["model_type"];
+            dat::use_given_model = root["use_given_model"];
+            dat::use_given_stf = root["use_given_stf"];
+            dat::source_amplitude = root["source_amplitude"];
+            dat::order = root["order"]; // order = 2: later
+            dat::obs_type = root["obs_type"];
 
-            dat->absorb_left = root["absorb_left"];
-            dat->absorb_right = root["absorb_right"];
-            dat->absorb_top = root["absorb_top"];
-            dat->absorb_bottom = root["absorb_bottom"];
-            dat->absorb_width = root["width"];
+            dat::absorb_left = root["absorb_left"];
+            dat::absorb_right = root["absorb_right"];
+            dat::absorb_top = root["absorb_top"];
+            dat::absorb_bottom = root["absorb_bottom"];
+            dat::absorb_width = root["width"];
 
             {
                 const char* wave_propagation_type = root["wave_propagation_type"].as<char*>();
                 if(strcmp(wave_propagation_type,"SH") == 0){
-                    dat->wave_propagation_sh = 1;
-                    dat->wave_propagation_psv = 0;
+                    dat::wave_propagation_sh = 1;
+                    dat::wave_propagation_psv = 0;
                 }
                 else if(strcmp(wave_propagation_type,"PSV") == 0){
-                    dat->wave_propagation_sh = 0;
-                    dat->wave_propagation_psv = 1;
+                    dat::wave_propagation_sh = 0;
+                    dat::wave_propagation_psv = 1;
                 }
                 else if(strcmp(wave_propagation_type,"both") == 0){
-                    dat->wave_propagation_sh = 1;
-                    dat->wave_propagation_psv = 1;
+                    dat::wave_propagation_sh = 1;
+                    dat::wave_propagation_psv = 1;
                 }
                 else{
-                    dat->wave_propagation_sh = 0;
-                    dat->wave_propagation_psv = 0;
+                    dat::wave_propagation_sh = 0;
+                    dat::wave_propagation_psv = 0;
                 }
             }
 
             {
                 int single_src = root["src_info"].is<JsonObject>();
-                dat->nsrc = single_src?1:root["src_info"].size();
+                dat::nsrc = single_src?1:root["src_info"].size();
 
-                float *src_x = mat::createHost(dat->nsrc);
-                float *src_z = mat::createHost(dat->nsrc);
+                float *src_x = mat::createHost(dat::nsrc);
+                float *src_z = mat::createHost(dat::nsrc);
 
-                dat->stf_type = mat::createIntHost(dat->nsrc);
-                dat->stf_PSV_x = mat::createHost(dat->nsrc);
-                dat->stf_PSV_z = mat::createHost(dat->nsrc);
-                dat->tauw_0 = mat::createHost(dat->nsrc);
-                dat->tauw = mat::createHost(dat->nsrc);
-                dat->tee_0 = mat::createHost(dat->nsrc);
-                dat->f_min = mat::createHost(dat->nsrc);
-                dat->f_max = mat::createHost(dat->nsrc);
+                dat::stf_type = mat::createIntHost(dat::nsrc);
+                dat::stf_PSV_x = mat::createHost(dat::nsrc);
+                dat::stf_PSV_z = mat::createHost(dat::nsrc);
+                dat::tauw_0 = mat::createHost(dat::nsrc);
+                dat::tauw = mat::createHost(dat::nsrc);
+                dat::tee_0 = mat::createHost(dat::nsrc);
+                dat::f_min = mat::createHost(dat::nsrc);
+                dat::f_max = mat::createHost(dat::nsrc);
 
-                for(int isrc = 0; isrc < dat->nsrc; isrc++){
+                for(int isrc = 0; isrc < dat::nsrc; isrc++){
                     JsonObject& src = single_src?root["src_info"]:((JsonArray&)root["src_info"]).get<JsonObject>(isrc);
                     src_x[isrc] = src["loc_x"];
                     src_z[isrc] = src["loc_z"];
 
-                    dat->stf_PSV_x[isrc] = src["stf_PSV"][0];
-                    dat->stf_PSV_z[isrc] = src["stf_PSV"][1];
-                    dat->tauw_0[isrc] = src["tauw_0"];
-                    dat->tauw[isrc] = src["tauw"];
-                    dat->tee_0[isrc] = src["tee_0"];
-                    dat->f_min[isrc] = src["f_min"];
-                    dat->f_max[isrc] = src["f_max"];
+                    dat::stf_PSV_x[isrc] = src["stf_PSV"][0];
+                    dat::stf_PSV_z[isrc] = src["stf_PSV"][1];
+                    dat::tauw_0[isrc] = src["tauw_0"];
+                    dat::tauw[isrc] = src["tauw"];
+                    dat::tee_0[isrc] = src["tee_0"];
+                    dat::f_min[isrc] = src["f_min"];
+                    dat::f_max[isrc] = src["f_max"];
 
                     const char* stf_type_str = src["stf_type"].as<char*>();
                     if(strcmp(stf_type_str,"delta") == 0){
-                        dat->stf_type[isrc] = 0;
+                        dat::stf_type[isrc] = 0;
                     }
                     else if(strcmp(stf_type_str,"delta_bp") == 0){
-                        dat->stf_type[isrc] = 1;
+                        dat::stf_type[isrc] = 1;
                     }
                     else if(strcmp(stf_type_str,"ricker") == 0){
-                        dat->stf_type[isrc] = 2;
+                        dat::stf_type[isrc] = 2;
                     }
                     else if(strcmp(stf_type_str,"heaviside_bp") == 0){
-                        dat->stf_type[isrc] = 3;
+                        dat::stf_type[isrc] = 3;
                     }
                     else{
-                        dat->stf_type[isrc] = -1;
+                        dat::stf_type[isrc] = -1;
                     }
                 }
 
-                dat->src_x = mat::create(dat->nsrc);
-                dat->src_z = mat::create(dat->nsrc);
+                dat::src_x = mat::create(dat::nsrc);
+                dat::src_z = mat::create(dat::nsrc);
 
-                mat::copyHostToDevice(dat->src_x, src_x, dat->nsrc);
-                mat::copyHostToDevice(dat->src_z, src_z, dat->nsrc);
+                mat::copyHostToDevice(dat::src_x, src_x, dat::nsrc);
+                mat::copyHostToDevice(dat::src_z, src_z, dat::nsrc);
 
                 mat::freeMat(src_x);
                 mat::freeMat(src_z);
@@ -691,21 +690,21 @@ void *importData(){
 
             {
                 int single_rec = root["rec_x"].is<float>();
-                dat->nrec = single_rec?1:root["rec_x"].size();
+                dat::nrec = single_rec?1:root["rec_x"].size();
 
-                float *rec_x = mat::createHost(dat->nrec);
-                float *rec_z = mat::createHost(dat->nrec);
+                float *rec_x = mat::createHost(dat::nrec);
+                float *rec_z = mat::createHost(dat::nrec);
 
-                for(int irec = 0; irec < dat->nrec; irec++){
+                for(int irec = 0; irec < dat::nrec; irec++){
                     rec_x[irec] = single_rec?root["rec_x"]:((JsonArray&)root["rec_x"]).get<float>(irec);
                     rec_z[irec] = single_rec?root["rec_z"]:((JsonArray&)root["rec_z"]).get<float>(irec);
                 }
 
-                dat->rec_x = mat::create(dat->nrec);
-                dat->rec_z = mat::create(dat->nrec);
+                dat::rec_x = mat::create(dat::nrec);
+                dat::rec_z = mat::create(dat::nrec);
 
-                mat::copyHostToDevice(dat->rec_x, rec_x, dat->nrec);
-                mat::copyHostToDevice(dat->rec_z, rec_z, dat->nrec);
+                mat::copyHostToDevice(dat::rec_x, rec_x, dat::nrec);
+                mat::copyHostToDevice(dat::rec_z, rec_z, dat::nrec);
 
                 mat::freeMat(rec_x);
                 mat::freeMat(rec_z);
@@ -713,7 +712,6 @@ void *importData(){
         }
         jsonBuffer.clear();
     }
-    return dat;
 }
 void checkMemoryUsage(){
     size_t free_byte ;
@@ -727,12 +725,12 @@ void checkMemoryUsage(){
 }
 void makeSourceTimeFunction(float *stf, int index){
     float max = 0;
-    float alfa = 2 * dat->tauw_0[index] / dat->tauw[index];
-    for(int it = 0; it < dat->nt; it++){
-        float t = it * dat->dt;
-        switch(dat -> stf_type[index]){
+    float alfa = 2 * dat::tauw_0[index] / dat::tauw[index];
+    for(int it = 0; it < dat::nt; it++){
+        float t = it * dat::dt;
+        switch(dat::stf_type[index]){
             case 2:{
-                stf[it] = (-2 * pow(alfa, 3) / pi) * (t - dat->tee_0[index]) * exp(-pow(alfa, 2) * pow(t - dat->tee_0[index], 2));
+                stf[it] = (-2 * pow(alfa, 3) / pi) * (t - dat::tee_0[index]) * exp(-pow(alfa, 2) * pow(t - dat::tee_0[index], 2));
                 break;
             }
             // other stf: later
@@ -743,23 +741,23 @@ void makeSourceTimeFunction(float *stf, int index){
         }
     }
     if(max > 0){
-        for(int it = 0; it < dat->nt; it++){
+        for(int it = 0; it < dat::nt; it++){
             stf[it] /= max;
         }
     }
 }
 void prepareSTF(){
-    int &nt = dat->nt;
-    float amp = dat->source_amplitude / dat->dx / dat->dz;
-    float **stf_x = mat::createHost(dat->nsrc, dat->nt);
-    float **stf_y = mat::createHost(dat->nsrc, dat->nt);
-    float **stf_z = mat::createHost(dat->nsrc, dat->nt);
-    float *stfn = mat::createHost(dat->nt);
+    int &nt = dat::nt;
+    float amp = dat::source_amplitude / dat::dx / dat::dz;
+    float **stf_x = mat::createHost(dat::nsrc, dat::nt);
+    float **stf_y = mat::createHost(dat::nsrc, dat::nt);
+    float **stf_z = mat::createHost(dat::nsrc, dat::nt);
+    float *stfn = mat::createHost(dat::nt);
 
-    for(int isrc = 0; isrc < dat->nsrc; isrc++){
+    for(int isrc = 0; isrc < dat::nsrc; isrc++){
         makeSourceTimeFunction(stfn, isrc);
-        float px = dat->stf_PSV_x[isrc];
-        float pz = dat->stf_PSV_z[isrc];
+        float px = dat::stf_PSV_x[isrc];
+        float pz = dat::stf_PSV_z[isrc];
         float norm = sqrt(pow(px,2) + pow(pz,2));
         for(int it = 0; it < nt; it++){
             stf_x[isrc][it] = amp * stfn[it] * px / norm;
@@ -768,9 +766,9 @@ void prepareSTF(){
         }
     }
 
-    mat::copyHostToDevice(dat->stf_x, stf_x, dat->nsrc, dat->nt);
-    mat::copyHostToDevice(dat->stf_y, stf_y, dat->nsrc, dat->nt);
-    mat::copyHostToDevice(dat->stf_z, stf_z, dat->nsrc, dat->nt);
+    mat::copyHostToDevice(dat::stf_x, stf_x, dat::nsrc, dat::nt);
+    mat::copyHostToDevice(dat::stf_y, stf_y, dat::nsrc, dat::nt);
+    mat::copyHostToDevice(dat::stf_z, stf_z, dat::nsrc, dat::nt);
 
     mat::freeMat(stf_x);
     mat::freeMat(stf_y);
@@ -779,24 +777,24 @@ void prepareSTF(){
 }
 void defineMaterialParameters(){
     // other model_type: later
-    int &nx = dat->nx;
-    int &nz = dat->nz;
-    switch(dat->model_type){
+    int &nx = dat::nx;
+    int &nz = dat::nz;
+    switch(dat::model_type){
         case 1:{
-            mat::init(dat->rho, nx, nz, 3000);
-            mat::init(dat->mu, nx, nz, 4.8e10);
-            mat::init(dat->lambda, nx, nz, 4.8e10);
+            mat::init(dat::rho, nx, nz, 3000);
+            mat::init(dat::mu, nx, nz, 4.8e10);
+            mat::init(dat::lambda, nx, nz, 4.8e10);
             break;
         }
         case 10:{
-            mat::init(dat->rho, nx, nz, 2600);
-            mat::init(dat->mu, nx, nz, 2.66e10);
-            mat::init(dat->lambda, nx, nz, 3.42e10);
+            mat::init(dat::rho, nx, nz, 2600);
+            mat::init(dat::mu, nx, nz, 2.66e10);
+            mat::init(dat::lambda, nx, nz, 3.42e10);
             break;
         }
         case 13:{
-            mat::init(dat->mu, nx, nz, 2.66e10);
-            mat::init(dat->lambda, nx, nz, 3.42e10);
+            mat::init(dat::mu, nx, nz, 2.66e10);
+            mat::init(dat::lambda, nx, nz, 3.42e10);
 
             float rho = 2600;
             float mu = 2.66e10;
@@ -815,309 +813,309 @@ void defineMaterialParameters(){
                     rho2[i][j] = 3600;
                 }
             }
-            mat::copyHostToDevice(dat->rho, rho2, nx, nz);
+            mat::copyHostToDevice(dat::rho, rho2, nx, nz);
             mat::freeMat(rho2);
         }
     }
 }
 void initialiseDynamicFields(){
-    int &nx = dat->nx;
-    int &nz = dat->nz;
-    if(dat->wave_propagation_sh){
-        mat::init(dat->vy, nx, nz, 0);
-        mat::init(dat->uy, nx, nz, 0);
-        mat::init(dat->sxy, nx, nz, 0);
-        mat::init(dat->szy, nx, nz, 0);
+    int &nx = dat::nx;
+    int &nz = dat::nz;
+    if(dat::wave_propagation_sh){
+        mat::init(dat::vy, nx, nz, 0);
+        mat::init(dat::uy, nx, nz, 0);
+        mat::init(dat::sxy, nx, nz, 0);
+        mat::init(dat::szy, nx, nz, 0);
     }
-    if(dat->wave_propagation_psv){
-        mat::init(dat->vx, nx, nz, 0);
-        mat::init(dat->vz, nx, nz, 0);
-        mat::init(dat->ux, nx, nz, 0);
-        mat::init(dat->uz, nx, nz, 0);
-        mat::init(dat->sxx, nx, nz, 0);
-        mat::init(dat->szz, nx, nz, 0);
-        mat::init(dat->sxz, nx, nz, 0);
+    if(dat::wave_propagation_psv){
+        mat::init(dat::vx, nx, nz, 0);
+        mat::init(dat::vz, nx, nz, 0);
+        mat::init(dat::ux, nx, nz, 0);
+        mat::init(dat::uz, nx, nz, 0);
+        mat::init(dat::sxx, nx, nz, 0);
+        mat::init(dat::szz, nx, nz, 0);
+        mat::init(dat::sxz, nx, nz, 0);
     }
 }
 void initialiseKernels(){
-    int &nx = dat->nx;
-    int &nz = dat->nz;
-    mat::init(dat->K_lambda, nx, nz, 0);
-    mat::init(dat->K_mu, nx, nz, 0);
-    mat::init(dat->K_rho, nx, nz, 0);
+    int &nx = dat::nx;
+    int &nz = dat::nz;
+    mat::init(dat::K_lambda, nx, nz, 0);
+    mat::init(dat::K_mu, nx, nz, 0);
+    mat::init(dat::K_rho, nx, nz, 0);
 }
 void runWaveFieldPropagation(){
-    int &sh = dat->wave_propagation_sh;
-    int &psv = dat->wave_propagation_psv;
-    int &mode = dat->simulation_mode;
+    int &sh = dat::wave_propagation_sh;
+    int &psv = dat::wave_propagation_psv;
+    int &mode = dat::simulation_mode;
 
-    int &nx = dat->nx;
-    int &nz = dat->nz;
-    float &dx = dat->dx;
-    float &dz = dat->dz;
-    float &dt = dat->dt;
+    int &nx = dat::nx;
+    int &nz = dat::nz;
+    float &dx = dat::dx;
+    float &dz = dat::dz;
+    float &dt = dat::dt;
 
     dim3 dimGrid(nx, nbt);
     dim3 dimBlock(nz / nbt);
 
     initialiseDynamicFields();
 
-    for(int it = 0; it < dat->nt; it++){
+    for(int it = 0; it < dat::nt; it++){
         if(mode == 0){
-            if((it + 1) % dat->sfe == 0){
-                int isfe = dat->nsfe - (it + 1) / dat->sfe;
+            if((it + 1) % dat::sfe == 0){
+                int isfe = dat::nsfe - (it + 1) / dat::sfe;
                 if(sh){
-                    mat::copyDeviceToHost(dat->uy_forward[isfe], dat->uy, nx, nz);
+                    mat::copyDeviceToHost(dat::uy_forward[isfe], dat::uy, nx, nz);
                 }
                 if(psv){
-                    mat::copyDeviceToHost(dat->ux_forward[isfe], dat->ux, nx, nz);
-                    mat::copyDeviceToHost(dat->uz_forward[isfe], dat->uz, nx, nz);
+                    mat::copyDeviceToHost(dat::ux_forward[isfe], dat::ux, nx, nz);
+                    mat::copyDeviceToHost(dat::uz_forward[isfe], dat::uz, nx, nz);
                 }
             }
         }
 
         if(sh){
-            divSY<<<dimGrid, dimBlock>>>(dat->dsy, dat->sxy, dat->szy, dx, dz, nx, nz);
+            divSY<<<dimGrid, dimBlock>>>(dat::dsy, dat::sxy, dat::szy, dx, dz, nx, nz);
         }
         if(psv){
-            divSXZ<<<dimGrid, dimBlock>>>(dat->dsx, dat->dsz, dat->sxx, dat->szz, dat->sxz, dx, dz, nx, nz);
+            divSXZ<<<dimGrid, dimBlock>>>(dat::dsx, dat::dsz, dat::sxx, dat::szz, dat::sxz, dx, dz, nx, nz);
         }
         if(mode == 0){
-            addSTF<<<dat->nsrc, 1>>>(
-                dat->dsx, dat->dsy, dat->dsz, dat->stf_x, dat->stf_y, dat->stf_z,
-                dat->src_x_id, dat->src_z_id, dat->isrc, sh, psv, it
+            addSTF<<<dat::nsrc, 1>>>(
+                dat::dsx, dat::dsy, dat::dsz, dat::stf_x, dat::stf_y, dat::stf_z,
+                dat::src_x_id, dat::src_z_id, dat::isrc, sh, psv, it
             );
         }
         else if(mode == 1){
-            addSTF<<<dat->nrec, 1>>>(
-                dat->dsx, dat->dsy, dat->dsz, dat->adstf_x, dat->adstf_y, dat->adstf_z,
-                dat->rec_x_id, dat->rec_z_id, -1, sh, psv, it
+            addSTF<<<dat::nrec, 1>>>(
+                dat::dsx, dat::dsy, dat::dsz, dat::adstf_x, dat::adstf_y, dat::adstf_z,
+                dat::rec_x_id, dat::rec_z_id, -1, sh, psv, it
             );
         }
         if(sh){
-            updateV<<<dimGrid, dimBlock>>>(dat->vy, dat->dsy, dat->rho, dat->absbound, dt);
-            divVY<<<dimGrid, dimBlock>>>(dat->dvydx, dat->dvydz, dat->vy, dx, dz, nx, nz);
-            updateSY<<<dimGrid, dimBlock>>>(dat->sxy, dat->szy, dat->dvydx, dat->dvydz, dat->mu, dt);
-            updateU<<<dimGrid, dimBlock>>>(dat->uy, dat->vy, dt);
+            updateV<<<dimGrid, dimBlock>>>(dat::vy, dat::dsy, dat::rho, dat::absbound, dt);
+            divVY<<<dimGrid, dimBlock>>>(dat::dvydx, dat::dvydz, dat::vy, dx, dz, nx, nz);
+            updateSY<<<dimGrid, dimBlock>>>(dat::sxy, dat::szy, dat::dvydx, dat::dvydz, dat::mu, dt);
+            updateU<<<dimGrid, dimBlock>>>(dat::uy, dat::vy, dt);
         }
         if(psv){
-            updateV<<<dimGrid, dimBlock>>>(dat->vx, dat->dsx, dat->rho, dat->absbound, dt);
-            updateV<<<dimGrid, dimBlock>>>(dat->vz, dat->dsz, dat->rho, dat->absbound, dt);
-            divVXZ<<<dimGrid, dimBlock>>>(dat->dvxdx, dat->dvxdz, dat->dvzdx, dat->dvzdz, dat->vx, dat->vz, dx, dz, nx, nz);
-            updateSXZ<<<dimGrid, dimBlock>>>(dat->sxx, dat->szz, dat->sxz, dat->dvxdx, dat->dvxdz, dat->dvzdx, dat->dvzdz, dat->lambda, dat->mu, dt);
-            updateU<<<dimGrid, dimBlock>>>(dat->ux, dat->vx, dt);
-            updateU<<<dimGrid, dimBlock>>>(dat->uz, dat->vz, dt);
+            updateV<<<dimGrid, dimBlock>>>(dat::vx, dat::dsx, dat::rho, dat::absbound, dt);
+            updateV<<<dimGrid, dimBlock>>>(dat::vz, dat::dsz, dat::rho, dat::absbound, dt);
+            divVXZ<<<dimGrid, dimBlock>>>(dat::dvxdx, dat::dvxdz, dat::dvzdx, dat::dvzdz, dat::vx, dat::vz, dx, dz, nx, nz);
+            updateSXZ<<<dimGrid, dimBlock>>>(dat::sxx, dat::szz, dat::sxz, dat::dvxdx, dat::dvxdz, dat::dvzdx, dat::dvzdz, dat::lambda, dat::mu, dt);
+            updateU<<<dimGrid, dimBlock>>>(dat::ux, dat::vx, dt);
+            updateU<<<dimGrid, dimBlock>>>(dat::uz, dat::vz, dt);
         }
         if(mode == 0){
-            if(dat->obs_type == 0){
-                saveV<<<dat->nrec, 1>>>(
-                    dat->v_rec_x, dat->v_rec_y, dat->v_rec_z, dat->vx, dat->vy, dat->vz,
-                    dat->rec_x_id, dat->rec_z_id, sh, psv, it
+            if(dat::obs_type == 0){
+                saveV<<<dat::nrec, 1>>>(
+                    dat::v_rec_x, dat::v_rec_y, dat::v_rec_z, dat::vx, dat::vy, dat::vz,
+                    dat::rec_x_id, dat::rec_z_id, sh, psv, it
                 );
             }
-            else if(dat->obs_type == 1){
-                saveV<<<dat->nrec, 1>>>(
-                    dat->v_rec_x, dat->v_rec_y, dat->v_rec_z, dat->ux, dat->uy, dat->uz,
-                    dat->rec_x_id, dat->rec_z_id, sh, psv, it
+            else if(dat::obs_type == 1){
+                saveV<<<dat::nrec, 1>>>(
+                    dat::v_rec_x, dat::v_rec_y, dat::v_rec_z, dat::ux, dat::uy, dat::uz,
+                    dat::rec_x_id, dat::rec_z_id, sh, psv, it
                 );
             }
-            else if(dat->obs_type == 2 && dat->isrc >= 0){
-                saveV<<<dat->nrec, 1>>>(
-                    dat->u_obs_x, dat->u_obs_y, dat->u_obs_z, dat->ux, dat->uy, dat->uz,
-                    dat->rec_x_id, dat->rec_z_id, dat->isrc, sh, psv, it
+            else if(dat::obs_type == 2 && dat::isrc >= 0){
+                saveV<<<dat::nrec, 1>>>(
+                    dat::u_obs_x, dat::u_obs_y, dat::u_obs_z, dat::ux, dat::uy, dat::uz,
+                    dat::rec_x_id, dat::rec_z_id, dat::isrc, sh, psv, it
                 );
             }
-            if((it + 1) % dat->sfe == 0){
-                int isfe = dat->nsfe - (it + 1) / dat->sfe;
+            if((it + 1) % dat::sfe == 0){
+                int isfe = dat::nsfe - (it + 1) / dat::sfe;
                 if(sh){
-                    mat::copyDeviceToHost(dat->vy_forward[isfe], dat->vy, nx, nz);
+                    mat::copyDeviceToHost(dat::vy_forward[isfe], dat::vy, nx, nz);
                 }
                 if(psv){
-                    mat::copyDeviceToHost(dat->vx_forward[isfe], dat->vx, nx, nz);
-                    mat::copyDeviceToHost(dat->vz_forward[isfe], dat->vz, nx, nz);
+                    mat::copyDeviceToHost(dat::vx_forward[isfe], dat::vx, nx, nz);
+                    mat::copyDeviceToHost(dat::vz_forward[isfe], dat::vz, nx, nz);
                 }
             }
         }
         else if(mode == 1){
-            if((it + dat->sfe) % dat->sfe == 0){
+            if((it + dat::sfe) % dat::sfe == 0){
                 // dsi -> ui_fw -> vi_fw
-                int isfe = (it + dat->sfe) / dat->sfe - 1;
-                float tsfe = dat->sfe * dt;
+                int isfe = (it + dat::sfe) / dat::sfe - 1;
+                float tsfe = dat::sfe * dt;
                 if(sh){
-                    mat::copyHostToDevice(dat->dsy, dat->uy_forward[isfe], nx, nz);
-                    divVY<<<dimGrid, dimBlock>>>(dat->dvydx, dat->dvydz, dat->uy, dx, dz, nx, nz);
-                    divVY<<<dimGrid, dimBlock>>>(dat->dvydx_fw, dat->dvydz_fw, dat->dsy, dx, dz, nx, nz);
-                    mat::copyHostToDevice(dat->dsy, dat->vy_forward[isfe], nx, nz);
-                    interactionRhoY<<<dimGrid, dimBlock>>>(dat->K_rho, dat->vy, dat->dsy, tsfe);
-                    interactionMuY<<<dimGrid, dimBlock>>>(dat->K_mu, dat->dvydx, dat->dvydx_fw, dat->dvydz, dat->dvydz_fw, tsfe);
+                    mat::copyHostToDevice(dat::dsy, dat::uy_forward[isfe], nx, nz);
+                    divVY<<<dimGrid, dimBlock>>>(dat::dvydx, dat::dvydz, dat::uy, dx, dz, nx, nz);
+                    divVY<<<dimGrid, dimBlock>>>(dat::dvydx_fw, dat::dvydz_fw, dat::dsy, dx, dz, nx, nz);
+                    mat::copyHostToDevice(dat::dsy, dat::vy_forward[isfe], nx, nz);
+                    interactionRhoY<<<dimGrid, dimBlock>>>(dat::K_rho, dat::vy, dat::dsy, tsfe);
+                    interactionMuY<<<dimGrid, dimBlock>>>(dat::K_mu, dat::dvydx, dat::dvydx_fw, dat::dvydz, dat::dvydz_fw, tsfe);
                 }
                 if(psv){
-                    mat::copyHostToDevice(dat->dsx, dat->ux_forward[isfe], nx, nz);
-                    mat::copyHostToDevice(dat->dsz, dat->uz_forward[isfe], nx, nz);
+                    mat::copyHostToDevice(dat::dsx, dat::ux_forward[isfe], nx, nz);
+                    mat::copyHostToDevice(dat::dsz, dat::uz_forward[isfe], nx, nz);
                     divVXZ<<<dimGrid, dimBlock>>>(
-                        dat->dvxdx, dat->dvxdz, dat->dvzdx, dat->dvzdz,
-                        dat->ux, dat->uz, dx, dz, nx, nz
+                        dat::dvxdx, dat::dvxdz, dat::dvzdx, dat::dvzdz,
+                        dat::ux, dat::uz, dx, dz, nx, nz
                     );
                     divVXZ<<<dimGrid, dimBlock>>>(
-                        dat->dvxdx_fw, dat->dvxdz_fw, dat->dvzdx_fw, dat->dvzdz_fw,
-                        dat->dsx, dat->dsz, dx, dz, nx, nz
+                        dat::dvxdx_fw, dat::dvxdz_fw, dat::dvzdx_fw, dat::dvzdz_fw,
+                        dat::dsx, dat::dsz, dx, dz, nx, nz
                     );
 
-                    mat::copyHostToDevice(dat->dsx, dat->vx_forward[isfe], nx, nz);
-                    mat::copyHostToDevice(dat->dsz, dat->vz_forward[isfe], nx, nz);
-                    interactionRhoXZ<<<dimGrid, dimBlock>>>(dat->K_rho, dat->vx, dat->dsx, dat->vz, dat->dsz, tsfe);
+                    mat::copyHostToDevice(dat::dsx, dat::vx_forward[isfe], nx, nz);
+                    mat::copyHostToDevice(dat::dsz, dat::vz_forward[isfe], nx, nz);
+                    interactionRhoXZ<<<dimGrid, dimBlock>>>(dat::K_rho, dat::vx, dat::dsx, dat::vz, dat::dsz, tsfe);
                     interactionMuXZ<<<dimGrid, dimBlock>>>(
-                        dat->K_mu, dat->dvxdx, dat->dvxdx_fw, dat->dvxdz, dat->dvxdz_fw,
-                        dat->dvzdx, dat->dvzdx_fw, dat->dvzdz, dat->dvzdz_fw, tsfe
+                        dat::K_mu, dat::dvxdx, dat::dvxdx_fw, dat::dvxdz, dat::dvxdz_fw,
+                        dat::dvzdx, dat::dvzdx_fw, dat::dvzdz, dat::dvzdz_fw, tsfe
                     );
-                    interactionLambdaXZ<<<dimGrid, dimBlock>>>(dat->K_lambda, dat->dvxdx, dat->dvxdx_fw, dat->dvzdz, dat->dvzdz_fw, tsfe);
+                    interactionLambdaXZ<<<dimGrid, dimBlock>>>(dat::K_lambda, dat::dvxdx, dat::dvxdx_fw, dat::dvzdz, dat::dvzdz_fw, tsfe);
                 }
             }
         }
     }
 }
 void checkArgs(int adjoint){
-    int &sh = dat->wave_propagation_sh;
-    int &psv = dat->wave_propagation_psv;
+    int &sh = dat::wave_propagation_sh;
+    int &psv = dat::wave_propagation_psv;
 
-    int &nx = dat->nx;
-    int &nz = dat->nz;
+    int &nx = dat::nx;
+    int &nz = dat::nz;
 
-    if(dat->nt % dat->sfe != 0){
-        dat->nt = dat->sfe * (int)((float)dat->nt / dat->sfe + 0.5);
+    if(dat::nt % dat::sfe != 0){
+        dat::nt = dat::sfe * (int)((float)dat::nt / dat::sfe + 0.5);
     }
-    dat->nsfe = dat->nt / dat->sfe;
-    dat->dx = dat->Lx / (nx - 1);
-    dat->dz = dat->Lz / (nz - 1);
+    dat::nsfe = dat::nt / dat::sfe;
+    dat::dx = dat::Lx / (nx - 1);
+    dat::dz = dat::Lz / (nz - 1);
 
     if(sh){
-        dat->vy = mat::create(nx, nz);
-        dat->uy = mat::create(nx, nz);
-        dat->sxy = mat::create(nx, nz);
-        dat->szy = mat::create(nx, nz);
-        dat->dsy = mat::create(nx, nz);
-        dat->dvydx = mat::create(nx, nz);
-        dat->dvydz = mat::create(nx, nz);
+        dat::vy = mat::create(nx, nz);
+        dat::uy = mat::create(nx, nz);
+        dat::sxy = mat::create(nx, nz);
+        dat::szy = mat::create(nx, nz);
+        dat::dsy = mat::create(nx, nz);
+        dat::dvydx = mat::create(nx, nz);
+        dat::dvydz = mat::create(nx, nz);
 
-        dat->v_rec_y = mat::create(dat->nrec, dat->nt);
-        dat->uy_forward = mat::createHost(dat->nsfe, nx, nz);
-        dat->vy_forward = mat::createHost(dat->nsfe, nx, nz);
+        dat::v_rec_y = mat::create(dat::nrec, dat::nt);
+        dat::uy_forward = mat::createHost(dat::nsfe, nx, nz);
+        dat::vy_forward = mat::createHost(dat::nsfe, nx, nz);
     }
     if(psv){
-        dat->vx = mat::create(nx, nz);
-        dat->vz = mat::create(nx, nz);
-        dat->ux = mat::create(nx, nz);
-        dat->uz = mat::create(nx, nz);
-        dat->sxx = mat::create(nx, nz);
-        dat->szz = mat::create(nx, nz);
-        dat->sxz = mat::create(nx, nz);
-        dat->dsx = mat::create(nx, nz);
-        dat->dsz = mat::create(nx, nz);
-        dat->dvxdx = mat::create(nx, nz);
-        dat->dvxdz = mat::create(nx, nz);
-        dat->dvzdx = mat::create(nx, nz);
-        dat->dvzdz = mat::create(nx, nz);
+        dat::vx = mat::create(nx, nz);
+        dat::vz = mat::create(nx, nz);
+        dat::ux = mat::create(nx, nz);
+        dat::uz = mat::create(nx, nz);
+        dat::sxx = mat::create(nx, nz);
+        dat::szz = mat::create(nx, nz);
+        dat::sxz = mat::create(nx, nz);
+        dat::dsx = mat::create(nx, nz);
+        dat::dsz = mat::create(nx, nz);
+        dat::dvxdx = mat::create(nx, nz);
+        dat::dvxdz = mat::create(nx, nz);
+        dat::dvzdx = mat::create(nx, nz);
+        dat::dvzdz = mat::create(nx, nz);
 
-        dat->v_rec_x = mat::create(dat->nrec, dat->nt);
-        dat->v_rec_z = mat::create(dat->nrec, dat->nt);
-        dat->ux_forward = mat::createHost(dat->nsfe, nx, nz);
-        dat->uz_forward = mat::createHost(dat->nsfe, nx, nz);
-        dat->vx_forward = mat::createHost(dat->nsfe, nx, nz);
-        dat->vz_forward = mat::createHost(dat->nsfe, nx, nz);
+        dat::v_rec_x = mat::create(dat::nrec, dat::nt);
+        dat::v_rec_z = mat::create(dat::nrec, dat::nt);
+        dat::ux_forward = mat::createHost(dat::nsfe, nx, nz);
+        dat::uz_forward = mat::createHost(dat::nsfe, nx, nz);
+        dat::vx_forward = mat::createHost(dat::nsfe, nx, nz);
+        dat::vz_forward = mat::createHost(dat::nsfe, nx, nz);
     }
 
-    dat->absbound = mat::create(nx, nz);
-    dat->lambda = mat::create(nx, nz);
-    dat->rho = mat::create(nx, nz);
-    dat->mu = mat::create(nx, nz);
+    dat::absbound = mat::create(nx, nz);
+    dat::lambda = mat::create(nx, nz);
+    dat::rho = mat::create(nx, nz);
+    dat::mu = mat::create(nx, nz);
 
-    dat->stf_x = mat::create(dat->nsrc, dat->nt);
-    dat->stf_y = mat::create(dat->nsrc, dat->nt);
-    dat->stf_z = mat::create(dat->nsrc, dat->nt);
+    dat::stf_x = mat::create(dat::nsrc, dat::nt);
+    dat::stf_y = mat::create(dat::nsrc, dat::nt);
+    dat::stf_z = mat::create(dat::nsrc, dat::nt);
 
     if(adjoint){
         if(sh){
-            dat->dvydx_fw = mat::create(nx, nz);
-            dat->dvydz_fw = mat::create(nx, nz);
+            dat::dvydx_fw = mat::create(nx, nz);
+            dat::dvydz_fw = mat::create(nx, nz);
         }
         if(psv){
-            dat->dvxdx_fw = mat::create(nx, nz);
-            dat->dvxdz_fw = mat::create(nx, nz);
-            dat->dvzdx_fw = mat::create(nx, nz);
-            dat->dvzdz_fw = mat::create(nx, nz);
+            dat::dvxdx_fw = mat::create(nx, nz);
+            dat::dvxdz_fw = mat::create(nx, nz);
+            dat::dvzdx_fw = mat::create(nx, nz);
+            dat::dvzdz_fw = mat::create(nx, nz);
         }
 
-        dat->K_lambda = mat::create(nx, nz);
-        dat->K_mu = mat::create(nx, nz);
-        dat->K_rho = mat::create(nx, nz);
+        dat::K_lambda = mat::create(nx, nz);
+        dat::K_mu = mat::create(nx, nz);
+        dat::K_rho = mat::create(nx, nz);
 
-        dat->adstf_x = mat::create(dat->nrec, dat->nt);
-        dat->adstf_y = mat::create(dat->nrec, dat->nt);
-        dat->adstf_z = mat::create(dat->nrec, dat->nt);
+        dat::adstf_x = mat::create(dat::nrec, dat::nt);
+        dat::adstf_y = mat::create(dat::nrec, dat::nt);
+        dat::adstf_z = mat::create(dat::nrec, dat::nt);
     }
 
-    dat->src_x_id = mat::createInt(dat->nsrc);
-    dat->src_z_id = mat::createInt(dat->nsrc);
-    dat->rec_x_id = mat::createInt(dat->nrec);
-    dat->rec_z_id = mat::createInt(dat->nrec);
+    dat::src_x_id = mat::createInt(dat::nsrc);
+    dat::src_z_id = mat::createInt(dat::nsrc);
+    dat::rec_x_id = mat::createInt(dat::nrec);
+    dat::rec_z_id = mat::createInt(dat::nrec);
 
-    computeIndices<<<dat->nsrc, 1>>>(dat->src_x_id, dat->src_x, dat->Lx, dat->nx);
-    computeIndices<<<dat->nsrc, 1>>>(dat->src_z_id, dat->src_z, dat->Lz, dat->nz);
-    computeIndices<<<dat->nrec, 1>>>(dat->rec_x_id, dat->rec_x, dat->Lx, dat->nx);
-    computeIndices<<<dat->nrec, 1>>>(dat->rec_z_id, dat->rec_z, dat->Lz, dat->nz);
+    computeIndices<<<dat::nsrc, 1>>>(dat::src_x_id, dat::src_x, dat::Lx, dat::nx);
+    computeIndices<<<dat::nsrc, 1>>>(dat::src_z_id, dat::src_z, dat::Lz, dat::nz);
+    computeIndices<<<dat::nrec, 1>>>(dat::rec_x_id, dat::rec_x, dat::Lx, dat::nx);
+    computeIndices<<<dat::nrec, 1>>>(dat::rec_z_id, dat::rec_z, dat::Lz, dat::nz);
 
     dim3 dimGrid(nx, nbt);
     dim3 dimBlock(nz / nbt);
     initialiseAbsorbingBoundaries<<<dimGrid, dimBlock>>>(
-        dat->absbound, dat->absorb_width,
-        dat->absorb_left, dat->absorb_right, dat->absorb_bottom, dat->absorb_top,
-        dat->Lx, dat->Lz, dat->dx, dat->dz
+        dat::absbound, dat::absorb_width,
+        dat::absorb_left, dat::absorb_right, dat::absorb_bottom, dat::absorb_top,
+        dat::Lx, dat::Lz, dat::dx, dat::dz
     );
 
-    float *t = mat::createHost(dat->nt);
-    for(int it = 0; it < dat->nt; it++){
-        t[it] = it * dat->dt;
+    float *t = mat::createHost(dat::nt);
+    for(int it = 0; it < dat::nt; it++){
+        t[it] = it * dat::dt;
     }
-    mat::write(t, dat->nt, "t");
+    mat::write(t, dat::nt, "t");
 }
 void runForward(int isrc){
-    dat->simulation_mode = 0;
-    dat->isrc = isrc;
+    dat::simulation_mode = 0;
+    dat::isrc = isrc;
     runWaveFieldPropagation();
 
-    // float **v_rec_x=mat::createHost(dat->nrec, dat->nt);
-    // float **v_rec_z=mat::createHost(dat->nrec, dat->nt);
-    // mat::copyDeviceToHost(v_rec_x, dat->v_rec_x, dat->nrec, dat->nt);
-    // mat::copyDeviceToHost(v_rec_z, dat->v_rec_z, dat->nrec, dat->nt);
-    // mat::write(v_rec_x, dat->nrec, dat->nt, "vx_rec");
-    // mat::write(v_rec_z, dat->nrec, dat->nt, "vz_rec");
-    // mat::write(dat->vx_forward, dat->nsfe, dat->nx, dat->nz, "vx");
-    // mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
+    // float **v_rec_x=mat::createHost(dat::nrec, dat::nt);
+    // float **v_rec_z=mat::createHost(dat::nrec, dat::nt);
+    // mat::copyDeviceToHost(v_rec_x, dat::v_rec_x, dat::nrec, dat::nt);
+    // mat::copyDeviceToHost(v_rec_z, dat::v_rec_z, dat::nrec, dat::nt);
+    // mat::write(v_rec_x, dat::nrec, dat::nt, "vx_rec");
+    // mat::write(v_rec_z, dat::nrec, dat::nt, "vz_rec");
+    // mat::write(dat::vx_forward, dat::nsfe, dat::nx, dat::nz, "vx");
+    // mat::write(dat::vz_forward, dat::nsfe, dat::nx, dat::nz, "vz");
 }
 void runAdjoint(int init_kernel){
-    dat->simulation_mode = 1;
+    dat::simulation_mode = 1;
     if(init_kernel){
         initialiseKernels();
     }
     runWaveFieldPropagation();
 
-    // float **rho = mat::createHost(dat->nx, dat->nz);
-    // float **mu = mat::createHost(dat->nx, dat->nz);
-    // float **lambda = mat::createHost(dat->nx, dat->nz);
-    // mat::copyDeviceToHost(rho, dat->K_rho, dat->nx, dat->nz);
-    // mat::copyDeviceToHost(mu, dat->K_mu, dat->nx, dat->nz);
-    // mat::copyDeviceToHost(lambda, dat->K_lambda, dat->nx, dat->nz);
-    // mat::write(rho, dat->nx, dat->nz, "rho");
-    // mat::write(mu, dat->nx, dat->nz, "mu");
-    // mat::write(lambda, dat->nx, dat->nz, "lambda");
-    // mat::write(dat->vx_forward, dat->nsfe, dat->nx, dat->nz, "vx");
-    // mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
+    // float **rho = mat::createHost(dat::nx, dat::nz);
+    // float **mu = mat::createHost(dat::nx, dat::nz);
+    // float **lambda = mat::createHost(dat::nx, dat::nz);
+    // mat::copyDeviceToHost(rho, dat::K_rho, dat::nx, dat::nz);
+    // mat::copyDeviceToHost(mu, dat::K_mu, dat::nx, dat::nz);
+    // mat::copyDeviceToHost(lambda, dat::K_lambda, dat::nx, dat::nz);
+    // mat::write(rho, dat::nx, dat::nz, "rho");
+    // mat::write(mu, dat::nx, dat::nz, "mu");
+    // mat::write(lambda, dat::nx, dat::nz, "lambda");
+    // mat::write(dat::vx_forward, dat::nsfe, dat::nx, dat::nz, "vx");
+    // mat::write(dat::vz_forward, dat::nsfe, dat::nx, dat::nz, "vz");
 }
 float computeKernels(int kernel){
-    int &nsrc = dat->nsrc;
-    int &nrec = dat->nrec;
-    int &nt = dat->nt;
-    float &dt = dat->dt;
+    int &nsrc = dat::nsrc;
+    int &nrec = dat::nrec;
+    int &nt = dat::nt;
+    float &dt = dat::dt;
 
     float *d_misfit = mat::create(nt);
     float *h_misfit = mat::createHost(nt);
@@ -1127,13 +1125,13 @@ float computeKernels(int kernel){
     for(int isrc = 0; isrc < nsrc; isrc++){
         runForward(isrc);
         for(int irec = 0; irec < nrec; irec++){
-            calculateMisfit<<<nt, 1>>>(d_misfit, dat->v_rec_x, dat->u_obs_x, dat->tw, dt, isrc, irec);
-            calculateMisfit<<<nt, 1>>>(d_misfit, dat->v_rec_z, dat->u_obs_z, dat->tw, dt, isrc, irec);
+            calculateMisfit<<<nt, 1>>>(d_misfit, dat::v_rec_x, dat::u_obs_x, dat::tw, dt, isrc, irec);
+            calculateMisfit<<<nt, 1>>>(d_misfit, dat::v_rec_z, dat::u_obs_z, dat::tw, dt, isrc, irec);
         }
         if(kernel){
-            prepareAdjointSTF<<<nt, nrec>>>(dat->adstf_x, dat->v_rec_x, dat->u_obs_x, dat->tw, nt, isrc);
-            prepareAdjointSTF<<<nt, nrec>>>(dat->adstf_z, dat->v_rec_z, dat->u_obs_z, dat->tw, nt, isrc);
-            mat::init(dat->adstf_y, nrec, nt, 0);
+            prepareAdjointSTF<<<nt, nrec>>>(dat::adstf_x, dat::v_rec_x, dat::u_obs_x, dat::tw, nt, isrc);
+            prepareAdjointSTF<<<nt, nrec>>>(dat::adstf_z, dat::v_rec_z, dat::u_obs_z, dat::tw, nt, isrc);
+            mat::init(dat::adstf_y, nrec, nt, 0);
             runAdjoint(0);
         }
     }
@@ -1158,30 +1156,30 @@ float calculateMisfit(){
 void inversionRoutine(){
     int niter = 1; // move to dat: later
 
-    // int &sh = dat->wave_propagation_sh; // sh: later
-    // int &psv = dat->wave_propagation_psv;
+    // int &sh = dat::wave_propagation_sh; // sh: later
+    // int &psv = dat::wave_propagation_psv;
 
-    int &nx = dat->nx;
-    int &nz = dat->nz;
-    int &nt = dat->nt;
-    float &dt = dat->dt;
+    int &nx = dat::nx;
+    int &nz = dat::nz;
+    int &nt = dat::nt;
+    float &dt = dat::dt;
 
     dim3 dimGrid(nx, nbt);
     dim3 dimBlock(nz / nbt);
 
-    dat->obs_type = 1;
+    dat::obs_type = 1;
 
     // model start
     float **rho_start = mat::create(nx, nz);
     float **mu_start = mat::create(nx, nz);
     float **lambda_start = mat::create(nx, nz);
-    mat::copy(rho_start, dat->rho, nx, nz);
-    mat::copy(mu_start, dat->mu, nx, nz);
-    mat::copy(lambda_start, dat->lambda, nx, nz);
+    mat::copy(rho_start, dat::rho, nx, nz);
+    mat::copy(mu_start, dat::mu, nx, nz);
+    mat::copy(lambda_start, dat::lambda, nx, nz);
 
     // taper weights
-    dat->tw = mat::create(nt);
-    getTaperWeights<<<nt, 1>>>(dat->tw, dt, nt);
+    dat::tw = mat::create(nt);
+    getTaperWeights<<<nt, 1>>>(dat::tw, dt, nt);
 
     // gaussian filter
     int sigma = 2;
@@ -1193,25 +1191,25 @@ void inversionRoutine(){
     float misfit = misfit_init;
 
     for(int iter = 0; iter < niter; iter++){
-        normKernel<<<dimGrid, dimBlock>>>(dat->K_rho, rho_start, misfit_init);
-        normKernel<<<dimGrid, dimBlock>>>(dat->K_mu, mu_start, misfit_init);
-        normKernel<<<dimGrid, dimBlock>>>(dat->K_lambda, lambda_start, misfit_init);
-        filterKernelX<<<dimGrid, dimBlock>>>(dat->K_rho, gtemp, nx, sigma);
-        filterKernelZ<<<dimGrid, dimBlock>>>(dat->K_rho, gtemp, gsum, nz, sigma);
-        filterKernelX<<<dimGrid, dimBlock>>>(dat->K_mu, gtemp, nx, sigma);
-        filterKernelZ<<<dimGrid, dimBlock>>>(dat->K_mu, gtemp, gsum, nz, sigma);
-        filterKernelX<<<dimGrid, dimBlock>>>(dat->K_lambda, gtemp, nx, sigma);
-        filterKernelZ<<<dimGrid, dimBlock>>>(dat->K_lambda, gtemp, gsum, nz, sigma);
+        normKernel<<<dimGrid, dimBlock>>>(dat::K_rho, rho_start, misfit_init);
+        normKernel<<<dimGrid, dimBlock>>>(dat::K_mu, mu_start, misfit_init);
+        normKernel<<<dimGrid, dimBlock>>>(dat::K_lambda, lambda_start, misfit_init);
+        filterKernelX<<<dimGrid, dimBlock>>>(dat::K_rho, gtemp, nx, sigma);
+        filterKernelZ<<<dimGrid, dimBlock>>>(dat::K_rho, gtemp, gsum, nz, sigma);
+        filterKernelX<<<dimGrid, dimBlock>>>(dat::K_mu, gtemp, nx, sigma);
+        filterKernelZ<<<dimGrid, dimBlock>>>(dat::K_mu, gtemp, gsum, nz, sigma);
+        filterKernelX<<<dimGrid, dimBlock>>>(dat::K_lambda, gtemp, nx, sigma);
+        filterKernelZ<<<dimGrid, dimBlock>>>(dat::K_lambda, gtemp, gsum, nz, sigma);
 
         float **lambda = mat::createHost(nx,nz);
         float **mu = mat::createHost(nx,nz);
         float **rho = mat::createHost(nx,nz);
-        mat::copyDeviceToHost(rho, dat->K_rho, dat->nx, dat->nz);
-        mat::copyDeviceToHost(mu, dat->K_mu, dat->nx, dat->nz);
-        mat::copyDeviceToHost(lambda, dat->K_lambda, dat->nx, dat->nz);
-        mat::write(rho, dat->nx, dat->nz, "rho");
-        mat::write(mu, dat->nx, dat->nz, "mu");
-        mat::write(lambda, dat->nx, dat->nz, "lambda");
+        mat::copyDeviceToHost(rho, dat::K_rho, dat::nx, dat::nz);
+        mat::copyDeviceToHost(mu, dat::K_mu, dat::nx, dat::nz);
+        mat::copyDeviceToHost(lambda, dat::K_lambda, dat::nx, dat::nz);
+        mat::write(rho, dat::nx, dat::nz, "rho");
+        mat::write(mu, dat::nx, dat::nz, "mu");
+        mat::write(lambda, dat::nx, dat::nz, "lambda");
 
         misfit /= misfit_init;
         printf("iter=%d misfit=%e\n", iter, misfit);
@@ -1222,22 +1220,22 @@ void inversionRoutine(){
     }
 }
 void runSyntheticInvertion(){
-    int &nsrc = dat->nsrc;
-    int &nrec = dat->nrec;
-    int &nt = dat->nt;
+    int &nsrc = dat::nsrc;
+    int &nrec = dat::nrec;
+    int &nt = dat::nt;
 
     checkArgs(1);
-    dat->obs_type = 2; // save displacement persouce
-    dat->model_type = 13; // true model: later
-    prepareSTF(); // dat->use_given_stf, sObsPerFreq: later
-    defineMaterialParameters(); // dat->use_given_model: later
-    dat->u_obs_x = mat::create(nsrc, nrec, nt);
-    dat->u_obs_z = mat::create(nsrc, nrec, nt);
+    dat::obs_type = 2; // save displacement persouce
+    dat::model_type = 13; // true model: later
+    prepareSTF(); // dat::use_given_stf, sObsPerFreq: later
+    defineMaterialParameters(); // dat::use_given_model: later
+    dat::u_obs_x = mat::create(nsrc, nrec, nt);
+    dat::u_obs_z = mat::create(nsrc, nrec, nt);
     for(int isrc = 0; isrc < nsrc; isrc++){
         runForward(isrc);
     }
 
-    dat->model_type = 10;
+    dat::model_type = 10;
     defineMaterialParameters();
     inversionRoutine();
 }
