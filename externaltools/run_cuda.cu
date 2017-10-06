@@ -3,6 +3,7 @@
 #include <math.h>
 #include <string.h>
 #include "ArduinoJson.h"
+#include "lbfgs.h"
 
 #define devij int i = blockIdx.x, j = threadIdx.x + blockIdx.y * blockDim.x
 
@@ -123,8 +124,16 @@ namespace dat{
     float ***vx_forward;  // host
     float ***vy_forward;  // host
     float ***vz_forward;  // host
-}
 
+    int sigma;
+    float **gsum;
+    float **gtemp;
+
+    float misfit_init;
+    float **lambda_start;
+    float **mu_start;
+    float **rho_start;
+}
 namespace mat{
     __global__ void _setValue(float *mat, const float init){
         int i = blockIdx.x;
@@ -246,6 +255,11 @@ namespace mat{
     void copyHostToDevice(float *d_a, const float *a, const int m){
         cudaMemcpy(d_a, a , m * sizeof(float), cudaMemcpyHostToDevice);
     }
+    void copyHostToDevice(float **pd_a, float *pa, const int m, const int n){
+        float **phd_a=(float **)malloc(sizeof(float *));
+        cudaMemcpy(phd_a, pd_a , sizeof(float *), cudaMemcpyDeviceToHost);
+        cudaMemcpy(*phd_a, pa , m * n * sizeof(float), cudaMemcpyHostToDevice);
+    }
     void copyHostToDevice(float **pd_a, float **pa, const int m, const int n){
         float **phd_a=(float **)malloc(sizeof(float *));
         cudaMemcpy(phd_a, pd_a , sizeof(float *), cudaMemcpyDeviceToHost);
@@ -261,6 +275,11 @@ namespace mat{
     void copyDeviceToHost(float *a, const float *d_a, const int m){
         cudaMemcpy(a, d_a , m * sizeof(float), cudaMemcpyDeviceToHost);
     }
+    void copyDeviceToHost(float *pa, float **pd_a, const int m, const int n){
+        float **phd_a=(float **)malloc(sizeof(float *));
+        cudaMemcpy(phd_a, pd_a , sizeof(float *), cudaMemcpyDeviceToHost);
+        cudaMemcpy(pa, *phd_a , m * n * sizeof(float), cudaMemcpyDeviceToHost);
+    }
     void copyDeviceToHost(float **pa, float **pd_a, const int m, const int n){
         float **phd_a=(float **)malloc(sizeof(float *));
         cudaMemcpy(phd_a, pd_a , sizeof(float *), cudaMemcpyDeviceToHost);
@@ -272,14 +291,6 @@ namespace mat{
         for(int i = 0; i < p; i++){
             mat::copyDeviceToHost(pa[i], phd_a[i], m, n);
         }
-    }
-
-    void freeMat(float *mat){
-        free(mat);
-    }
-    void freeMat(float **mat){
-        free(*mat);
-        free(mat);
     }
 
     void read(float *data, int n, char *fname){
@@ -568,7 +579,7 @@ __global__ void calculateMisfit(float *misfit, float **u_syn, float ***u_obs, fl
     misfit[it] += wavedif * wavedif * dt;
 }
 
-void importData(){
+static void importData(){
     FILE *datfile = fopen("externaltools/config","r");
 
     char *buffer = 0;
@@ -684,8 +695,8 @@ void importData(){
                 mat::copyHostToDevice(dat::src_x, src_x, dat::nsrc);
                 mat::copyHostToDevice(dat::src_z, src_z, dat::nsrc);
 
-                mat::freeMat(src_x);
-                mat::freeMat(src_z);
+                free(src_x);
+                free(src_z);
             }
 
             {
@@ -706,14 +717,14 @@ void importData(){
                 mat::copyHostToDevice(dat::rec_x, rec_x, dat::nrec);
                 mat::copyHostToDevice(dat::rec_z, rec_z, dat::nrec);
 
-                mat::freeMat(rec_x);
-                mat::freeMat(rec_z);
+                free(rec_x);
+                free(rec_z);
             }
         }
         jsonBuffer.clear();
     }
 }
-void checkMemoryUsage(){
+static void checkMemoryUsage(){
     size_t free_byte ;
     size_t total_byte ;
     cudaMemGetInfo( &free_byte, &total_byte ) ;
@@ -723,7 +734,23 @@ void checkMemoryUsage(){
 
     printf("memory usage: %.1fMB / %.1fMB\n", used_db / 1024.0 / 1024.0, total_db / 1024.0 / 1024.0);
 }
-void makeSourceTimeFunction(float *stf, int index){
+static void mapModelToVector(float *k, float **lambda, float **mu, float **rho){
+    int &nx = dat::nx;
+    int &nz = dat::nz;
+    int length = nx * nz;
+    mat::copyDeviceToHost(k, lambda, nx, nz);
+    mat::copyDeviceToHost(k + length, mu, nx, nz);
+    mat::copyDeviceToHost(k + length * 2, rho, nx, nz);
+}
+static void mapVectorToModel(float *k, float **lambda, float **mu, float **rho){
+    int &nx = dat::nx;
+    int &nz = dat::nz;
+    int length = nx * nz;
+    mat::copyHostToDevice(lambda, k, nx, nz);
+    mat::copyHostToDevice(mu, k + length, nx, nz);
+    mat::copyHostToDevice(rho, k + length * 2, nx, nz);
+}
+static void makeSourceTimeFunction(float *stf, int index){
     float max = 0;
     float alfa = 2 * dat::tauw_0[index] / dat::tauw[index];
     for(int it = 0; it < dat::nt; it++){
@@ -746,7 +773,7 @@ void makeSourceTimeFunction(float *stf, int index){
         }
     }
 }
-void prepareSTF(){
+static void prepareSTF(){
     int &nt = dat::nt;
     float amp = dat::source_amplitude / dat::dx / dat::dz;
     float **stf_x = mat::createHost(dat::nsrc, dat::nt);
@@ -770,12 +797,15 @@ void prepareSTF(){
     mat::copyHostToDevice(dat::stf_y, stf_y, dat::nsrc, dat::nt);
     mat::copyHostToDevice(dat::stf_z, stf_z, dat::nsrc, dat::nt);
 
-    mat::freeMat(stf_x);
-    mat::freeMat(stf_y);
-    mat::freeMat(stf_z);
-    mat::freeMat(stfn);
+    free(*stf_x);
+    free(*stf_y);
+    free(*stf_z);
+    free(stf_x);
+    free(stf_y);
+    free(stf_z);
+    free(stfn);
 }
-void defineMaterialParameters(){
+static void defineMaterialParameters(){
     // other model_type: later
     int &nx = dat::nx;
     int &nz = dat::nz;
@@ -814,11 +844,12 @@ void defineMaterialParameters(){
                 }
             }
             mat::copyHostToDevice(dat::rho, rho2, nx, nz);
-            mat::freeMat(rho2);
+            free(*rho2);
+            free(rho2);
         }
     }
 }
-void initialiseDynamicFields(){
+static void initialiseDynamicFields(){
     int &nx = dat::nx;
     int &nz = dat::nz;
     if(dat::wave_propagation_sh){
@@ -837,14 +868,14 @@ void initialiseDynamicFields(){
         mat::init(dat::sxz, nx, nz, 0);
     }
 }
-void initialiseKernels(){
+static void initialiseKernels(){
     int &nx = dat::nx;
     int &nz = dat::nz;
     mat::init(dat::K_lambda, nx, nz, 0);
     mat::init(dat::K_mu, nx, nz, 0);
     mat::init(dat::K_rho, nx, nz, 0);
 }
-void runWaveFieldPropagation(){
+static void runWaveFieldPropagation(){
     int &sh = dat::wave_propagation_sh;
     int &psv = dat::wave_propagation_psv;
     int &mode = dat::simulation_mode;
@@ -974,7 +1005,7 @@ void runWaveFieldPropagation(){
         }
     }
 }
-void checkArgs(int adjoint){
+static void checkArgs(int adjoint){
     int &sh = dat::wave_propagation_sh;
     int &psv = dat::wave_propagation_psv;
 
@@ -1078,7 +1109,7 @@ void checkArgs(int adjoint){
     }
     mat::write(t, dat::nt, "t");
 }
-void runForward(int isrc){
+static void runForward(int isrc){
     dat::simulation_mode = 0;
     dat::isrc = isrc;
     runWaveFieldPropagation();
@@ -1092,7 +1123,7 @@ void runForward(int isrc){
     // mat::write(dat::vx_forward, dat::nsfe, dat::nx, dat::nz, "vx");
     // mat::write(dat::vz_forward, dat::nsfe, dat::nx, dat::nz, "vz");
 }
-void runAdjoint(int init_kernel){
+static void runAdjoint(int init_kernel){
     dat::simulation_mode = 1;
     if(init_kernel){
         initialiseKernels();
@@ -1111,9 +1142,11 @@ void runAdjoint(int init_kernel){
     // mat::write(dat::vx_forward, dat::nsfe, dat::nx, dat::nz, "vx");
     // mat::write(dat::vz_forward, dat::nsfe, dat::nx, dat::nz, "vz");
 }
-float computeKernels(int kernel){
+static float computeKernels(int kernel){
     int &nsrc = dat::nsrc;
     int &nrec = dat::nrec;
+    int &nx = dat::nx;
+    int &nz = dat::nz;
     int &nt = dat::nt;
     float &dt = dat::dt;
 
@@ -1145,81 +1178,138 @@ float computeKernels(int kernel){
     free(h_misfit);
     cudaFree(d_misfit);
 
+    if(kernel){
+        if(dat::misfit_init < 0){
+            dat::misfit_init = misfit;
+        }
+        dim3 dimGrid(nx, nbt);
+        dim3 dimBlock(nz / nbt);
+        normKernel<<<dimGrid, dimBlock>>>(dat::K_rho, dat::rho_start, dat::misfit_init);
+        normKernel<<<dimGrid, dimBlock>>>(dat::K_mu, dat::mu_start, dat::misfit_init);
+        normKernel<<<dimGrid, dimBlock>>>(dat::K_lambda, dat::lambda_start, dat::misfit_init);
+        filterKernelX<<<dimGrid, dimBlock>>>(dat::K_rho, dat::gtemp, nx, dat::sigma);
+        filterKernelZ<<<dimGrid, dimBlock>>>(dat::K_rho, dat::gtemp, dat::gsum, nz, dat::sigma);
+        filterKernelX<<<dimGrid, dimBlock>>>(dat::K_mu, dat::gtemp, nx, dat::sigma);
+        filterKernelZ<<<dimGrid, dimBlock>>>(dat::K_mu, dat::gtemp, dat::gsum, nz, dat::sigma);
+        filterKernelX<<<dimGrid, dimBlock>>>(dat::K_lambda, dat::gtemp, nx, dat::sigma);
+        filterKernelZ<<<dimGrid, dimBlock>>>(dat::K_lambda, dat::gtemp, dat::gsum, nz, dat::sigma);
+    }
+
     return misfit;
 }
-float computeKernels(){
+static float computeKernels(){
     return computeKernels(1);
 }
-float calculateMisfit(){
-    return computeKernels(0);
+
+static lbfgsfloatval_t evaluate(
+    void *instance,
+    const lbfgsfloatval_t *x,
+    lbfgsfloatval_t *g,
+    const int n,
+    const lbfgsfloatval_t step
+    ){
+    mapVectorToModel((float *)x, dat::lambda, dat::mu, dat::rho);
+    lbfgsfloatval_t fx = computeKernels();
+    mapModelToVector((float *)g, dat::K_lambda, dat::K_mu, dat::K_rho);
+
+    return fx;
 }
-void inversionRoutine(){
-    int niter = 1; // move to dat: later
 
-    // int &sh = dat::wave_propagation_sh; // sh: later
-    // int &psv = dat::wave_propagation_psv;
+static int progress(
+    void *instance,
+    const lbfgsfloatval_t *x,
+    const lbfgsfloatval_t *g,
+    const lbfgsfloatval_t fx,
+    const lbfgsfloatval_t xnorm,
+    const lbfgsfloatval_t gnorm,
+    const lbfgsfloatval_t step,
+    int n,
+    int k,
+    int ls
+    ){
+    printf("Iteration %d:\n", k);
+    printf("  fx = %f, x[0] = %f, x[1] = %f\n", fx, x[0], x[1]);
+    printf("  xnorm = %f, gnorm = %f, step = %f\n", xnorm, gnorm, step);
+    printf("\n");
+    return 0;
+}
 
+static void inversionRoutine(){
     int &nx = dat::nx;
     int &nz = dat::nz;
     int &nt = dat::nt;
     float &dt = dat::dt;
 
-    dim3 dimGrid(nx, nbt);
-    dim3 dimBlock(nz / nbt);
-
     dat::obs_type = 1;
 
     // model start
-    float **rho_start = mat::create(nx, nz);
-    float **mu_start = mat::create(nx, nz);
-    float **lambda_start = mat::create(nx, nz);
-    mat::copy(rho_start, dat::rho, nx, nz);
-    mat::copy(mu_start, dat::mu, nx, nz);
-    mat::copy(lambda_start, dat::lambda, nx, nz);
+    dat::rho_start = mat::create(nx, nz);
+    dat::mu_start = mat::create(nx, nz);
+    dat::lambda_start = mat::create(nx, nz);
+    mat::copy(dat::rho_start, dat::rho, nx, nz);
+    mat::copy(dat::mu_start, dat::mu, nx, nz);
+    mat::copy(dat::lambda_start, dat::lambda, nx, nz);
 
     // taper weights
     dat::tw = mat::create(nt);
     getTaperWeights<<<nt, 1>>>(dat::tw, dt, nt);
 
     // gaussian filter
-    int sigma = 2;
-    float **gsum = mat::create(nx, nz);
-    float **gtemp = mat::create(nx, nz);
-    initialiseGaussian<<<dimGrid, dimBlock>>>(gsum, nx, nz, sigma);
+    dat::sigma = 2;
+    dat::gsum = mat::create(nx, nz);
+    dat::gtemp = mat::create(nx, nz);
+    dim3 dimGrid(nx, nbt);
+    dim3 dimBlock(nz / nbt);
+    initialiseGaussian<<<dimGrid, dimBlock>>>(dat::gsum, nx, nz, dat::sigma);
 
-    float misfit_init = computeKernels();
-    float misfit = misfit_init;
+    dat::misfit_init = -1;
 
-    for(int iter = 0; iter < niter; iter++){
-        normKernel<<<dimGrid, dimBlock>>>(dat::K_rho, rho_start, misfit_init);
-        normKernel<<<dimGrid, dimBlock>>>(dat::K_mu, mu_start, misfit_init);
-        normKernel<<<dimGrid, dimBlock>>>(dat::K_lambda, lambda_start, misfit_init);
-        filterKernelX<<<dimGrid, dimBlock>>>(dat::K_rho, gtemp, nx, sigma);
-        filterKernelZ<<<dimGrid, dimBlock>>>(dat::K_rho, gtemp, gsum, nz, sigma);
-        filterKernelX<<<dimGrid, dimBlock>>>(dat::K_mu, gtemp, nx, sigma);
-        filterKernelZ<<<dimGrid, dimBlock>>>(dat::K_mu, gtemp, gsum, nz, sigma);
-        filterKernelX<<<dimGrid, dimBlock>>>(dat::K_lambda, gtemp, nx, sigma);
-        filterKernelZ<<<dimGrid, dimBlock>>>(dat::K_lambda, gtemp, gsum, nz, sigma);
+    int N = nx * nz * 3;
+    int ret = 0;
+    lbfgsfloatval_t fx;
+    lbfgsfloatval_t *x = lbfgs_malloc(N);
+    lbfgs_parameter_t param;
 
-        float **lambda = mat::createHost(nx,nz);
-        float **mu = mat::createHost(nx,nz);
-        float **rho = mat::createHost(nx,nz);
-        mat::copyDeviceToHost(rho, dat::K_rho, dat::nx, dat::nz);
-        mat::copyDeviceToHost(mu, dat::K_mu, dat::nx, dat::nz);
-        mat::copyDeviceToHost(lambda, dat::K_lambda, dat::nx, dat::nz);
-        mat::write(rho, dat::nx, dat::nz, "rho");
-        mat::write(mu, dat::nx, dat::nz, "mu");
-        mat::write(lambda, dat::nx, dat::nz, "lambda");
+    /* Initialize the variables. */
+    mapModelToVector((float *)x, dat::lambda, dat::mu, dat::rho);
 
-        misfit /= misfit_init;
-        printf("iter=%d misfit=%e\n", iter, misfit);
+    /* Initialize the parameters for the L-BFGS optimization. */
+    lbfgs_parameter_init(&param);
+    /*param.linesearch = LBFGS_LINESEARCH_BACKTRACKING;*/
 
-        if(iter < niter - 1){
-            misfit = computeKernels();
-        }
-    }
+    /*
+        Start the L-BFGS optimization; this will invoke the callback functions
+        evaluate() and progress() when necessary.
+     */
+    ret = lbfgs(N, x, &fx, evaluate, progress, NULL, &param);
+
+    /* Report the result. */
+    printf("L-BFGS optimization terminated with status code = %d\n", ret);
+    printf("  fx = %e, x[0] = %e, x[1] = %e, x[2] = %f\n", fx, x[0], x[1],x[2]);
+
+    mapModelToVector((float *)x, dat::K_lambda, dat::K_mu, dat::K_rho);
+    mat::write((float *)x,N,"t");
+
+    printf("%d %d\n",LBFGSERR_WIDTHTOOSMALL,LBFGSERR_INCREASEGRADIENT);
+
+    lbfgs_free(x);
+
+    float misfit = computeKernels();
+
+
+    float **lambda = mat::createHost(nx,nz);
+    float **mu = mat::createHost(nx,nz);
+    float **rho = mat::createHost(nx,nz);
+    mat::copyDeviceToHost(rho, dat::K_rho, dat::nx, dat::nz);
+    mat::copyDeviceToHost(mu, dat::K_mu, dat::nx, dat::nz);
+    mat::copyDeviceToHost(lambda, dat::K_lambda, dat::nx, dat::nz);
+    mat::write(rho, dat::nx, dat::nz, "rho");
+    mat::write(mu, dat::nx, dat::nz, "mu");
+    mat::write(lambda, dat::nx, dat::nz, "lambda");
+
+    printf("misfit=%e\n", misfit);
 }
-void runSyntheticInvertion(){
+static void runSyntheticInvertion(){
     int &nsrc = dat::nsrc;
     int &nrec = dat::nrec;
     int &nt = dat::nt;
