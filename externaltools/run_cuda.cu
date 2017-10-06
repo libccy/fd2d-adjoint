@@ -114,6 +114,7 @@ typedef struct{
     float **v_rec_z;
 
     float ***u_obs_x;
+    float ***u_obs_y;
     float ***u_obs_z;
 
     float ***ux_forward;  // host
@@ -407,6 +408,19 @@ __global__ void saveV(float **v_rec_x, float **v_rec_y, float **v_rec_z, float *
         v_rec_z[ir][it] = vz[xr][zr];
     }
 }
+__global__ void saveV(float ***v_rec_x, float ***v_rec_y, float ***v_rec_z, float **vx, float **vy, float **vz,
+    int *rec_x_id, int *rec_z_id, int isrc, int sh, int psv, int it){
+    int ir = blockIdx.x;
+    int xr = rec_x_id[ir];
+    int zr = rec_z_id[ir];
+    if(sh){
+        v_rec_y[isrc][ir][it] = vy[xr][zr];
+    }
+    if(psv){
+        v_rec_x[isrc][ir][it] = vx[xr][zr];
+        v_rec_z[isrc][ir][it] = vz[xr][zr];
+    }
+}
 __global__ void updateV(float **v, float **ds, float **rho, float **absbound, float dt){
     devij;
     v[i][j] = absbound[i][j] * (v[i][j] + dt * ds[i][j] / rho[i][j]);
@@ -528,11 +542,6 @@ __global__ void filterKernelZ(float **model, float **gtemp, float **gsum, int nz
 __global__ void updateModel(float **model, float **kernel, float step){
     devij;
     model[i][j] *= (1 - step * kernel[i][j]);
-}
-__global__ void saveDisplacementField(float ***u_obs, float **u, int isrc){
-    int it = blockIdx.x;
-    int irec = threadIdx.x;
-    u_obs[isrc][irec][it] = u[irec][it];
 }
 __global__ void getTaperWeights(float *tw, float dt, int nt){
     int it = blockIdx.x;
@@ -912,6 +921,12 @@ void runWaveFieldPropagation(fdat *dat){
                     dat->rec_x_id, dat->rec_z_id, sh, psv, it
                 );
             }
+            else if(dat->obs_type == 2 && dat->isrc >= 0){
+                saveV<<<dat->nrec, 1>>>(
+                    dat->u_obs_x, dat->u_obs_y, dat->u_obs_z, dat->ux, dat->uy, dat->uz,
+                    dat->rec_x_id, dat->rec_z_id, dat->isrc, sh, psv, it
+                );
+            }
             if((it + 1) % dat->sfe == 0){
                 int isfe = dat->nsfe - (it + 1) / dat->sfe;
                 if(sh){
@@ -1098,25 +1113,7 @@ void runAdjoint(fdat *dat, int init_kernel){
     // mat::write(dat->vx_forward, dat->nsfe, dat->nx, dat->nz, "vx");
     // mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
 }
-// float calculateMisfit(fdat *dat, float ****u_obs, float **u_syn_x, float **u_syn_z, float *tw){
-//     int &nsrc = dat->nsrc;
-//     int &nrec = dat->nrec;
-//     int &nt = dat->nt;
-//     float &dt = dat->dt;
-//
-//     float misfit = 0;
-//     for(int isrc = 0; isrc < nsrc; isrc++){
-//         runForward(dat, isrc);
-//         mat::copyDeviceToHost(u_syn_x, dat->v_rec_x, nrec, nt);
-//         mat::copyDeviceToHost(u_syn_z, dat->v_rec_z, nrec, nt);
-//         for(int irec = 0; irec < nrec; irec++){
-//             misfit += calculateMisfit(u_syn_x[irec], u_obs[0][isrc][irec], tw, dt, nt);
-//             misfit += calculateMisfit(u_syn_z[irec], u_obs[1][isrc][irec], tw, dt, nt);
-//         }
-//     }
-//     return misfit;
-// }
-float computeKernels(fdat *dat){
+float computeKernels(fdat *dat, int kernel){
     int &nsrc = dat->nsrc;
     int &nrec = dat->nrec;
     int &nt = dat->nt;
@@ -1133,11 +1130,12 @@ float computeKernels(fdat *dat){
             calculateMisfit<<<nt, 1>>>(d_misfit, dat->v_rec_x, dat->u_obs_x, dat->tw, dt, isrc, irec);
             calculateMisfit<<<nt, 1>>>(d_misfit, dat->v_rec_z, dat->u_obs_z, dat->tw, dt, isrc, irec);
         }
-
-        prepareAdjointSTF<<<nt, nrec>>>(dat->adstf_x, dat->v_rec_x, dat->u_obs_x, dat->tw, nt, isrc);
-        prepareAdjointSTF<<<nt, nrec>>>(dat->adstf_z, dat->v_rec_z, dat->u_obs_z, dat->tw, nt, isrc);
-        mat::init(dat->adstf_y, nrec, nt, 0);
-        runAdjoint(dat, 0);
+        if(kernel){
+            prepareAdjointSTF<<<nt, nrec>>>(dat->adstf_x, dat->v_rec_x, dat->u_obs_x, dat->tw, nt, isrc);
+            prepareAdjointSTF<<<nt, nrec>>>(dat->adstf_z, dat->v_rec_z, dat->u_obs_z, dat->tw, nt, isrc);
+            mat::init(dat->adstf_y, nrec, nt, 0);
+            runAdjoint(dat, 0);
+        }
     }
 
     mat::copyDeviceToHost(h_misfit, d_misfit, nt);
@@ -1150,6 +1148,12 @@ float computeKernels(fdat *dat){
     cudaFree(d_misfit);
 
     return misfit;
+}
+float computeKernels(fdat *dat){
+    return computeKernels(dat, 1);
+}
+float calculateMisfit(fdat *dat){
+    return computeKernels(dat, 0);
 }
 void inversionRoutine(fdat *dat){
     int niter = 1; // move to dat: later
@@ -1209,7 +1213,7 @@ void inversionRoutine(fdat *dat){
         mat::write(mu, dat->nx, dat->nz, "mu");
         mat::write(lambda, dat->nx, dat->nz, "lambda");
 
-        // misfit /= misfit_init;
+        misfit /= misfit_init;
         printf("iter=%d misfit=%e\n", iter, misfit);
 
         if(iter < niter - 1){
@@ -1223,7 +1227,7 @@ void runSyntheticInvertion(fdat *dat){
     int &nt = dat->nt;
 
     checkArgs(dat, 1);
-    dat->obs_type = 1;
+    dat->obs_type = 2; // save displacement persouce
     dat->model_type = 13; // true model: later
     prepareSTF(dat); // dat->use_given_stf, sObsPerFreq: later
     defineMaterialParameters(dat); // dat->use_given_model: later
@@ -1231,8 +1235,6 @@ void runSyntheticInvertion(fdat *dat){
     dat->u_obs_z = mat::create(nsrc, nrec, nt);
     for(int isrc = 0; isrc < nsrc; isrc++){
         runForward(dat, isrc);
-        saveDisplacementField<<<nt, nrec>>>(dat->u_obs_x, dat->v_rec_x, isrc);
-        saveDisplacementField<<<nt, nrec>>>(dat->u_obs_z, dat->v_rec_z, isrc);
     }
 
     dat->model_type = 10;
