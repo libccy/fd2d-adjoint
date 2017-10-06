@@ -124,6 +124,7 @@ typedef struct{
     float ***vy_forward;  // host
     float ***vz_forward;  // host
 } fdat;
+fdat *dat = new fdat;
 
 namespace mat{
     __global__ void _setValue(float *mat, const float init){
@@ -568,8 +569,7 @@ __global__ void calculateMisfit(float *misfit, float **u_syn, float ***u_obs, fl
     misfit[it] += wavedif * wavedif * dt;
 }
 
-fdat *importData(void){
-    fdat *dat = new fdat;
+void *importData(){
     FILE *datfile = fopen("externaltools/config","r");
 
     char *buffer = 0;
@@ -725,7 +725,7 @@ void checkMemoryUsage(){
 
     printf("memory usage: %.1fMB / %.1fMB\n", used_db / 1024.0 / 1024.0, total_db / 1024.0 / 1024.0);
 }
-void makeSourceTimeFunction(fdat *dat, float *stf, int index){
+void makeSourceTimeFunction(float *stf, int index){
     float max = 0;
     float alfa = 2 * dat->tauw_0[index] / dat->tauw[index];
     for(int it = 0; it < dat->nt; it++){
@@ -748,7 +748,7 @@ void makeSourceTimeFunction(fdat *dat, float *stf, int index){
         }
     }
 }
-void prepareSTF(fdat *dat){
+void prepareSTF(){
     int &nt = dat->nt;
     float amp = dat->source_amplitude / dat->dx / dat->dz;
     float **stf_x = mat::createHost(dat->nsrc, dat->nt);
@@ -757,7 +757,7 @@ void prepareSTF(fdat *dat){
     float *stfn = mat::createHost(dat->nt);
 
     for(int isrc = 0; isrc < dat->nsrc; isrc++){
-        makeSourceTimeFunction(dat, stfn, isrc);
+        makeSourceTimeFunction(stfn, isrc);
         float px = dat->stf_PSV_x[isrc];
         float pz = dat->stf_PSV_z[isrc];
         float norm = sqrt(pow(px,2) + pow(pz,2));
@@ -777,7 +777,7 @@ void prepareSTF(fdat *dat){
     mat::freeMat(stf_z);
     mat::freeMat(stfn);
 }
-void defineMaterialParameters(fdat *dat){
+void defineMaterialParameters(){
     // other model_type: later
     int &nx = dat->nx;
     int &nz = dat->nz;
@@ -820,7 +820,7 @@ void defineMaterialParameters(fdat *dat){
         }
     }
 }
-void initialiseDynamicFields(fdat *dat){
+void initialiseDynamicFields(){
     int &nx = dat->nx;
     int &nz = dat->nz;
     if(dat->wave_propagation_sh){
@@ -839,14 +839,14 @@ void initialiseDynamicFields(fdat *dat){
         mat::init(dat->sxz, nx, nz, 0);
     }
 }
-void initialiseKernels(fdat *dat){
+void initialiseKernels(){
     int &nx = dat->nx;
     int &nz = dat->nz;
     mat::init(dat->K_lambda, nx, nz, 0);
     mat::init(dat->K_mu, nx, nz, 0);
     mat::init(dat->K_rho, nx, nz, 0);
 }
-void runWaveFieldPropagation(fdat *dat){
+void runWaveFieldPropagation(){
     int &sh = dat->wave_propagation_sh;
     int &psv = dat->wave_propagation_psv;
     int &mode = dat->simulation_mode;
@@ -860,7 +860,7 @@ void runWaveFieldPropagation(fdat *dat){
     dim3 dimGrid(nx, nbt);
     dim3 dimBlock(nz / nbt);
 
-    initialiseDynamicFields(dat);
+    initialiseDynamicFields();
 
     for(int it = 0; it < dat->nt; it++){
         if(mode == 0){
@@ -976,7 +976,7 @@ void runWaveFieldPropagation(fdat *dat){
         }
     }
 }
-void checkArgs(fdat *dat, int adjoint){
+void checkArgs(int adjoint){
     int &sh = dat->wave_propagation_sh;
     int &psv = dat->wave_propagation_psv;
 
@@ -1080,10 +1080,10 @@ void checkArgs(fdat *dat, int adjoint){
     }
     mat::write(t, dat->nt, "t");
 }
-void runForward(fdat *dat, int isrc){
+void runForward(int isrc){
     dat->simulation_mode = 0;
     dat->isrc = isrc;
-    runWaveFieldPropagation(dat);
+    runWaveFieldPropagation();
 
     // float **v_rec_x=mat::createHost(dat->nrec, dat->nt);
     // float **v_rec_z=mat::createHost(dat->nrec, dat->nt);
@@ -1094,12 +1094,12 @@ void runForward(fdat *dat, int isrc){
     // mat::write(dat->vx_forward, dat->nsfe, dat->nx, dat->nz, "vx");
     // mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
 }
-void runAdjoint(fdat *dat, int init_kernel){
+void runAdjoint(int init_kernel){
     dat->simulation_mode = 1;
     if(init_kernel){
-        initialiseKernels(dat);
+        initialiseKernels();
     }
-    runWaveFieldPropagation(dat);
+    runWaveFieldPropagation();
 
     // float **rho = mat::createHost(dat->nx, dat->nz);
     // float **mu = mat::createHost(dat->nx, dat->nz);
@@ -1113,7 +1113,7 @@ void runAdjoint(fdat *dat, int init_kernel){
     // mat::write(dat->vx_forward, dat->nsfe, dat->nx, dat->nz, "vx");
     // mat::write(dat->vz_forward, dat->nsfe, dat->nx, dat->nz, "vz");
 }
-float computeKernels(fdat *dat, int kernel){
+float computeKernels(int kernel){
     int &nsrc = dat->nsrc;
     int &nrec = dat->nrec;
     int &nt = dat->nt;
@@ -1123,9 +1123,9 @@ float computeKernels(fdat *dat, int kernel){
     float *h_misfit = mat::createHost(nt);
     mat::init(d_misfit, nt, 0);
 
-    initialiseKernels(dat);
+    initialiseKernels();
     for(int isrc = 0; isrc < nsrc; isrc++){
-        runForward(dat, isrc);
+        runForward(isrc);
         for(int irec = 0; irec < nrec; irec++){
             calculateMisfit<<<nt, 1>>>(d_misfit, dat->v_rec_x, dat->u_obs_x, dat->tw, dt, isrc, irec);
             calculateMisfit<<<nt, 1>>>(d_misfit, dat->v_rec_z, dat->u_obs_z, dat->tw, dt, isrc, irec);
@@ -1134,7 +1134,7 @@ float computeKernels(fdat *dat, int kernel){
             prepareAdjointSTF<<<nt, nrec>>>(dat->adstf_x, dat->v_rec_x, dat->u_obs_x, dat->tw, nt, isrc);
             prepareAdjointSTF<<<nt, nrec>>>(dat->adstf_z, dat->v_rec_z, dat->u_obs_z, dat->tw, nt, isrc);
             mat::init(dat->adstf_y, nrec, nt, 0);
-            runAdjoint(dat, 0);
+            runAdjoint(0);
         }
     }
 
@@ -1149,13 +1149,13 @@ float computeKernels(fdat *dat, int kernel){
 
     return misfit;
 }
-float computeKernels(fdat *dat){
-    return computeKernels(dat, 1);
+float computeKernels(){
+    return computeKernels(1);
 }
-float calculateMisfit(fdat *dat){
-    return computeKernels(dat, 0);
+float calculateMisfit(){
+    return computeKernels(0);
 }
-void inversionRoutine(fdat *dat){
+void inversionRoutine(){
     int niter = 1; // move to dat: later
 
     // int &sh = dat->wave_propagation_sh; // sh: later
@@ -1189,7 +1189,7 @@ void inversionRoutine(fdat *dat){
     float **gtemp = mat::create(nx, nz);
     initialiseGaussian<<<dimGrid, dimBlock>>>(gsum, nx, nz, sigma);
 
-    float misfit_init = computeKernels(dat);
+    float misfit_init = computeKernels();
     float misfit = misfit_init;
 
     for(int iter = 0; iter < niter; iter++){
@@ -1217,43 +1217,43 @@ void inversionRoutine(fdat *dat){
         printf("iter=%d misfit=%e\n", iter, misfit);
 
         if(iter < niter - 1){
-            misfit = computeKernels(dat);
+            misfit = computeKernels();
         }
     }
 }
-void runSyntheticInvertion(fdat *dat){
+void runSyntheticInvertion(){
     int &nsrc = dat->nsrc;
     int &nrec = dat->nrec;
     int &nt = dat->nt;
 
-    checkArgs(dat, 1);
+    checkArgs(1);
     dat->obs_type = 2; // save displacement persouce
     dat->model_type = 13; // true model: later
-    prepareSTF(dat); // dat->use_given_stf, sObsPerFreq: later
-    defineMaterialParameters(dat); // dat->use_given_model: later
+    prepareSTF(); // dat->use_given_stf, sObsPerFreq: later
+    defineMaterialParameters(); // dat->use_given_model: later
     dat->u_obs_x = mat::create(nsrc, nrec, nt);
     dat->u_obs_z = mat::create(nsrc, nrec, nt);
     for(int isrc = 0; isrc < nsrc; isrc++){
-        runForward(dat, isrc);
+        runForward(isrc);
     }
 
     dat->model_type = 10;
-    defineMaterialParameters(dat);
-    inversionRoutine(dat);
+    defineMaterialParameters();
+    inversionRoutine();
 }
 
 int main(int argc , char *argv[]){
-    fdat *dat = importData();
+    importData();
     if(argc == 1){
-        runSyntheticInvertion(dat);
+        runSyntheticInvertion();
     }
     else{
         for(int i = 1; i< argc; i++){
             if(strcmp(argv[i],"run_forward") == 0){
-                checkArgs(dat, 0);
-                prepareSTF(dat);
-                defineMaterialParameters(dat);
-                runForward(dat, -1);
+                checkArgs(0);
+                prepareSTF();
+                defineMaterialParameters();
+                runForward(-1);
             }
         }
     }
