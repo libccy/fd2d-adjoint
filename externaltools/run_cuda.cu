@@ -4,7 +4,6 @@
 #include <string.h>
 #include "ArduinoJson.h"
 #include "lbfgs.h"
-#include "arithmetic_ansi.h"
 
 #define devij int i = blockIdx.x, j = threadIdx.x + blockIdx.y * blockDim.x
 
@@ -130,9 +129,7 @@ namespace dat{
     float **gsum;
     float **gtemp;
 
-    float gnorm;
-    float xnorm;
-
+    float misfit_init;
     float **lambda_start;
     float **mu_start;
     float **rho_start;
@@ -516,13 +513,9 @@ __global__ void prepareAdjointSTF(float **adstf, float **u_syn, float ***u_obs, 
     int irec = threadIdx.x;
     adstf[irec][nt - it - 1] = (u_syn[irec][it] - u_obs[isrc][irec][it]) * tw[it] * 2;
 }
-__global__ void normKernel(float **model, float **model_start, float gnorm){
+__global__ void normKernel(float **model, float **model_start, float misfit_init){
     devij;
-    model[i][j] *= model_start[i][j] / gnorm;
-}
-__global__ void normModel(float **model, float xnorm){
-    devij;
-    model[i][j] *= xnorm;
+    model[i][j] *= model_start[i][j] / misfit_init;
 }
 __device__ float gaussian(int x, int sigma){
     float xf = (float)x;
@@ -1186,11 +1179,14 @@ static float computeKernels(int kernel){
     cudaFree(d_misfit);
 
     if(kernel){
+        if(dat::misfit_init < 0){
+            dat::misfit_init = misfit;
+        }
         dim3 dimGrid(nx, nbt);
         dim3 dimBlock(nz / nbt);
-        normKernel<<<dimGrid, dimBlock>>>(dat::K_rho, dat::rho_start, dat::gnorm);
-        normKernel<<<dimGrid, dimBlock>>>(dat::K_mu, dat::mu_start, dat::gnorm);
-        normKernel<<<dimGrid, dimBlock>>>(dat::K_lambda, dat::lambda_start, dat::gnorm);
+        normKernel<<<dimGrid, dimBlock>>>(dat::K_rho, dat::rho_start, dat::misfit_init);
+        normKernel<<<dimGrid, dimBlock>>>(dat::K_mu, dat::mu_start, dat::misfit_init);
+        normKernel<<<dimGrid, dimBlock>>>(dat::K_lambda, dat::lambda_start, dat::misfit_init);
         filterKernelX<<<dimGrid, dimBlock>>>(dat::K_rho, dat::gtemp, nx, dat::sigma);
         filterKernelZ<<<dimGrid, dimBlock>>>(dat::K_rho, dat::gtemp, dat::gsum, nz, dat::sigma);
         filterKernelX<<<dimGrid, dimBlock>>>(dat::K_mu, dat::gtemp, nx, dat::sigma);
@@ -1213,14 +1209,8 @@ static lbfgsfloatval_t evaluate(
     const lbfgsfloatval_t step
     ){
     mapVectorToModel((float *)x, dat::lambda, dat::mu, dat::rho);
-    dim3 dimGrid(dat::nx, nbt);
-    dim3 dimBlock(dat::nz / nbt);
-    normModel<<<dimGrid, dimBlock>>>(dat::lambda, dat::xnorm);
-    normModel<<<dimGrid, dimBlock>>>(dat::mu, dat::xnorm);
-    normModel<<<dimGrid, dimBlock>>>(dat::rho, dat::xnorm);
     lbfgsfloatval_t fx = computeKernels();
     mapModelToVector((float *)g, dat::K_lambda, dat::K_mu, dat::K_rho);
-
 
     return fx;
 }
@@ -1272,6 +1262,8 @@ static void inversionRoutine(){
     dim3 dimBlock(nz / nbt);
     initialiseGaussian<<<dimGrid, dimBlock>>>(dat::gsum, nx, nz, dat::sigma);
 
+    dat::misfit_init = -1;
+
     int N = nx * nz * 3;
     int ret = 0;
     lbfgsfloatval_t fx;
@@ -1279,17 +1271,10 @@ static void inversionRoutine(){
     lbfgs_parameter_t param;
 
     /* Initialize the variables. */
-    dat::gnorm = 1;
-    computeKernels();
-    mapModelToVector((float *)x, dat::K_lambda, dat::K_mu, dat::K_rho);
-    vec2norm(&dat::gnorm, x, N);
     mapModelToVector((float *)x, dat::lambda, dat::mu, dat::rho);
-    vec2norm(&dat::xnorm, x, N);
-    vecscale(x, 1/dat::xnorm, N);
 
     /* Initialize the parameters for the L-BFGS optimization. */
     lbfgs_parameter_init(&param);
-    param.max_iterations = 10;
     /*param.linesearch = LBFGS_LINESEARCH_BACKTRACKING;*/
 
     /*
@@ -1300,28 +1285,29 @@ static void inversionRoutine(){
 
     /* Report the result. */
     printf("L-BFGS optimization terminated with status code = %d\n", ret);
-    printf("fx = %e, x[0] = %e, x[1] = %e, x[2] = %f\n", fx, x[0], x[1],x[2]);
+    printf("  fx = %e, x[0] = %e, x[1] = %e, x[2] = %f\n", fx, x[0], x[1],x[2]);
 
-    // mapModelToVector((float *)x, dat::K_lambda, dat::K_mu, dat::K_rho);
-    // mat::write((float *)x,N,"t");
+    mapModelToVector((float *)x, dat::K_lambda, dat::K_mu, dat::K_rho);
+    mat::write((float *)x,N,"t");
+
+    printf("%d %d\n",LBFGSERR_WIDTHTOOSMALL,LBFGSERR_INCREASEGRADIENT);
+
+    lbfgs_free(x);
+
+    float misfit = computeKernels();
 
 
-    // lbfgs_free(x);
+    float **lambda = mat::createHost(nx,nz);
+    float **mu = mat::createHost(nx,nz);
+    float **rho = mat::createHost(nx,nz);
+    mat::copyDeviceToHost(rho, dat::K_rho, dat::nx, dat::nz);
+    mat::copyDeviceToHost(mu, dat::K_mu, dat::nx, dat::nz);
+    mat::copyDeviceToHost(lambda, dat::K_lambda, dat::nx, dat::nz);
+    mat::write(rho, dat::nx, dat::nz, "rho");
+    mat::write(mu, dat::nx, dat::nz, "mu");
+    mat::write(lambda, dat::nx, dat::nz, "lambda");
 
-    // float misfit = computeKernels();
-    //
-    //
-    // float **lambda = mat::createHost(nx,nz);
-    // float **mu = mat::createHost(nx,nz);
-    // float **rho = mat::createHost(nx,nz);
-    // mat::copyDeviceToHost(rho, dat::K_rho, dat::nx, dat::nz);
-    // mat::copyDeviceToHost(mu, dat::K_mu, dat::nx, dat::nz);
-    // mat::copyDeviceToHost(lambda, dat::K_lambda, dat::nx, dat::nz);
-    // mat::write(rho, dat::nx, dat::nz, "rho");
-    // mat::write(mu, dat::nx, dat::nz, "mu");
-    // mat::write(lambda, dat::nx, dat::nz, "lambda");
-    //
-    // printf("misfit=%e\n", misfit);
+    printf("misfit=%e\n", misfit);
 }
 static void runSyntheticInvertion(){
     int &nsrc = dat::nsrc;
