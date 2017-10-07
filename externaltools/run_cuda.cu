@@ -20,6 +20,9 @@ namespace dat{
     float Lx;
     float Lz;
 
+    dim3 nxb;
+    dim3 nzt;
+
     int sfe;
     int nsfe;
     int order;
@@ -164,14 +167,14 @@ namespace mat{
         return mat;
     }
     float **init(float **mat, const int m, const int n, const float init){
-        dim3 dimGrid(m, nbt);
-        mat::_setValue<<<dimGrid, n / nbt>>>(mat, init);
+        dim3 dimBlock(m, nbt);
+        mat::_setValue<<<dimBlock, n / nbt>>>(mat, init);
         return mat;
     }
     float ***init(float ***mat, const int p, const int m, const int n, const float init){
-        dim3 dimGrid(m, nbt);
+        dim3 dimBlock(m, nbt);
         for(int i = 0; i < p; i++){
-            mat::_setValue<<<dimGrid, n / nbt>>>(mat, init, i);
+            mat::_setValue<<<dimBlock, n / nbt>>>(mat, init, i);
         }
         return mat;
     }
@@ -248,8 +251,8 @@ namespace mat{
     }
 
     void copy(float **mat, float **init, const int m, const int n){
-        dim3 dimGrid(m, nbt);
-        mat::_copy<<<dimGrid, n / nbt>>>(mat, init);
+        dim3 dimBlock(m, nbt);
+        mat::_copy<<<dimBlock, n / nbt>>>(mat, init);
     }
     void copyHostToDevice(float *d_a, const float *a, const int m){
         cudaMemcpy(d_a, a , m * sizeof(float), cudaMemcpyHostToDevice);
@@ -327,6 +330,9 @@ namespace mat{
         fclose(file);
     }
 }
+
+dim3 &nxb = dat::nxb;
+dim3 &nzt = dat::nzt;
 
 __global__ void divSY(float **dsy, float **sxy, float **szy, float dx, float dz, int nx, int nz){
     devij;
@@ -869,9 +875,6 @@ static void runWaveFieldPropagation(){
     float &dz = dat::dz;
     float &dt = dat::dt;
 
-    dim3 dimGrid(nx, nbt);
-    dim3 dimBlock(nz / nbt);
-
     initialiseDynamicFields();
 
     for(int it = 0; it < dat::nt; it++){
@@ -889,10 +892,10 @@ static void runWaveFieldPropagation(){
         }
 
         if(sh){
-            divSY<<<dimGrid, dimBlock>>>(dat::dsy, dat::sxy, dat::szy, dx, dz, nx, nz);
+            divSY<<<nxb, nzt>>>(dat::dsy, dat::sxy, dat::szy, dx, dz, nx, nz);
         }
         if(psv){
-            divSXZ<<<dimGrid, dimBlock>>>(dat::dsx, dat::dsz, dat::sxx, dat::szz, dat::sxz, dx, dz, nx, nz);
+            divSXZ<<<nxb, nzt>>>(dat::dsx, dat::dsz, dat::sxx, dat::szz, dat::sxz, dx, dz, nx, nz);
         }
         if(mode == 0){
             addSTF<<<dat::nsrc, 1>>>(
@@ -907,18 +910,18 @@ static void runWaveFieldPropagation(){
             );
         }
         if(sh){
-            updateV<<<dimGrid, dimBlock>>>(dat::vy, dat::dsy, dat::rho, dat::absbound, dt);
-            divVY<<<dimGrid, dimBlock>>>(dat::dvydx, dat::dvydz, dat::vy, dx, dz, nx, nz);
-            updateSY<<<dimGrid, dimBlock>>>(dat::sxy, dat::szy, dat::dvydx, dat::dvydz, dat::mu, dt);
-            updateU<<<dimGrid, dimBlock>>>(dat::uy, dat::vy, dt);
+            updateV<<<nxb, nzt>>>(dat::vy, dat::dsy, dat::rho, dat::absbound, dt);
+            divVY<<<nxb, nzt>>>(dat::dvydx, dat::dvydz, dat::vy, dx, dz, nx, nz);
+            updateSY<<<nxb, nzt>>>(dat::sxy, dat::szy, dat::dvydx, dat::dvydz, dat::mu, dt);
+            updateU<<<nxb, nzt>>>(dat::uy, dat::vy, dt);
         }
         if(psv){
-            updateV<<<dimGrid, dimBlock>>>(dat::vx, dat::dsx, dat::rho, dat::absbound, dt);
-            updateV<<<dimGrid, dimBlock>>>(dat::vz, dat::dsz, dat::rho, dat::absbound, dt);
-            divVXZ<<<dimGrid, dimBlock>>>(dat::dvxdx, dat::dvxdz, dat::dvzdx, dat::dvzdz, dat::vx, dat::vz, dx, dz, nx, nz);
-            updateSXZ<<<dimGrid, dimBlock>>>(dat::sxx, dat::szz, dat::sxz, dat::dvxdx, dat::dvxdz, dat::dvzdx, dat::dvzdz, dat::lambda, dat::mu, dt);
-            updateU<<<dimGrid, dimBlock>>>(dat::ux, dat::vx, dt);
-            updateU<<<dimGrid, dimBlock>>>(dat::uz, dat::vz, dt);
+            updateV<<<nxb, nzt>>>(dat::vx, dat::dsx, dat::rho, dat::absbound, dt);
+            updateV<<<nxb, nzt>>>(dat::vz, dat::dsz, dat::rho, dat::absbound, dt);
+            divVXZ<<<nxb, nzt>>>(dat::dvxdx, dat::dvxdz, dat::dvzdx, dat::dvzdz, dat::vx, dat::vz, dx, dz, nx, nz);
+            updateSXZ<<<nxb, nzt>>>(dat::sxx, dat::szz, dat::sxz, dat::dvxdx, dat::dvxdz, dat::dvzdx, dat::dvzdz, dat::lambda, dat::mu, dt);
+            updateU<<<nxb, nzt>>>(dat::ux, dat::vx, dt);
+            updateU<<<nxb, nzt>>>(dat::uz, dat::vz, dt);
         }
         if(mode == 0){
             if(dat::obs_type == 0){
@@ -957,32 +960,32 @@ static void runWaveFieldPropagation(){
                 float tsfe = dat::sfe * dt;
                 if(sh){
                     mat::copyHostToDevice(dat::dsy, dat::uy_forward[isfe], nx, nz);
-                    divVY<<<dimGrid, dimBlock>>>(dat::dvydx, dat::dvydz, dat::uy, dx, dz, nx, nz);
-                    divVY<<<dimGrid, dimBlock>>>(dat::dvydx_fw, dat::dvydz_fw, dat::dsy, dx, dz, nx, nz);
+                    divVY<<<nxb, nzt>>>(dat::dvydx, dat::dvydz, dat::uy, dx, dz, nx, nz);
+                    divVY<<<nxb, nzt>>>(dat::dvydx_fw, dat::dvydz_fw, dat::dsy, dx, dz, nx, nz);
                     mat::copyHostToDevice(dat::dsy, dat::vy_forward[isfe], nx, nz);
-                    interactionRhoY<<<dimGrid, dimBlock>>>(dat::K_rho, dat::vy, dat::dsy, tsfe);
-                    interactionMuY<<<dimGrid, dimBlock>>>(dat::K_mu, dat::dvydx, dat::dvydx_fw, dat::dvydz, dat::dvydz_fw, tsfe);
+                    interactionRhoY<<<nxb, nzt>>>(dat::K_rho, dat::vy, dat::dsy, tsfe);
+                    interactionMuY<<<nxb, nzt>>>(dat::K_mu, dat::dvydx, dat::dvydx_fw, dat::dvydz, dat::dvydz_fw, tsfe);
                 }
                 if(psv){
                     mat::copyHostToDevice(dat::dsx, dat::ux_forward[isfe], nx, nz);
                     mat::copyHostToDevice(dat::dsz, dat::uz_forward[isfe], nx, nz);
-                    divVXZ<<<dimGrid, dimBlock>>>(
+                    divVXZ<<<nxb, nzt>>>(
                         dat::dvxdx, dat::dvxdz, dat::dvzdx, dat::dvzdz,
                         dat::ux, dat::uz, dx, dz, nx, nz
                     );
-                    divVXZ<<<dimGrid, dimBlock>>>(
+                    divVXZ<<<nxb, nzt>>>(
                         dat::dvxdx_fw, dat::dvxdz_fw, dat::dvzdx_fw, dat::dvzdz_fw,
                         dat::dsx, dat::dsz, dx, dz, nx, nz
                     );
 
                     mat::copyHostToDevice(dat::dsx, dat::vx_forward[isfe], nx, nz);
                     mat::copyHostToDevice(dat::dsz, dat::vz_forward[isfe], nx, nz);
-                    interactionRhoXZ<<<dimGrid, dimBlock>>>(dat::K_rho, dat::vx, dat::dsx, dat::vz, dat::dsz, tsfe);
-                    interactionMuXZ<<<dimGrid, dimBlock>>>(
+                    interactionRhoXZ<<<nxb, nzt>>>(dat::K_rho, dat::vx, dat::dsx, dat::vz, dat::dsz, tsfe);
+                    interactionMuXZ<<<nxb, nzt>>>(
                         dat::K_mu, dat::dvxdx, dat::dvxdx_fw, dat::dvxdz, dat::dvxdz_fw,
                         dat::dvzdx, dat::dvzdx_fw, dat::dvzdz, dat::dvzdz_fw, tsfe
                     );
-                    interactionLambdaXZ<<<dimGrid, dimBlock>>>(dat::K_lambda, dat::dvxdx, dat::dvxdx_fw, dat::dvzdz, dat::dvzdz_fw, tsfe);
+                    interactionLambdaXZ<<<nxb, nzt>>>(dat::K_lambda, dat::dvxdx, dat::dvxdx_fw, dat::dvzdz, dat::dvzdz_fw, tsfe);
                 }
             }
         }
@@ -994,6 +997,11 @@ static void checkArgs(int adjoint){
 
     int &nx = dat::nx;
     int &nz = dat::nz;
+
+    dim3 dimGrid(dat::nx, nbt);
+    dim3 dimBlock(dat::nz / nbt);
+    dat::nxb = dimGrid;
+    dat::nzt = dimBlock;
 
     if(dat::nt % dat::sfe != 0){
         dat::nt = dat::sfe * (int)((float)dat::nt / dat::sfe + 0.5);
@@ -1078,9 +1086,7 @@ static void checkArgs(int adjoint){
     computeIndices<<<dat::nrec, 1>>>(dat::rec_x_id, dat::rec_x, dat::Lx, dat::nx);
     computeIndices<<<dat::nrec, 1>>>(dat::rec_z_id, dat::rec_z, dat::Lz, dat::nz);
 
-    dim3 dimGrid(nx, nbt);
-    dim3 dimBlock(nz / nbt);
-    initialiseAbsorbingBoundaries<<<dimGrid, dimBlock>>>(
+    initialiseAbsorbingBoundaries<<<nxb, nzt>>>(
         dat::absbound, dat::absorb_width,
         dat::absorb_left, dat::absorb_right, dat::absorb_bottom, dat::absorb_top,
         dat::Lx, dat::Lz, dat::dx, dat::dz
@@ -1165,17 +1171,15 @@ static float computeKernels(int kernel){
         if(dat::misfit_init < 0){
             dat::misfit_init = misfit;
         }
-        dim3 dimGrid(nx, nbt);
-        dim3 dimBlock(nz / nbt);
-        normKernel<<<dimGrid, dimBlock>>>(dat::K_rho, dat::rho_start, dat::misfit_init);
-        normKernel<<<dimGrid, dimBlock>>>(dat::K_mu, dat::mu_start, dat::misfit_init);
-        normKernel<<<dimGrid, dimBlock>>>(dat::K_lambda, dat::lambda_start, dat::misfit_init);
-        filterKernelX<<<dimGrid, dimBlock>>>(dat::K_rho, dat::gtemp, nx, dat::sigma);
-        filterKernelZ<<<dimGrid, dimBlock>>>(dat::K_rho, dat::gtemp, dat::gsum, nz, dat::sigma);
-        filterKernelX<<<dimGrid, dimBlock>>>(dat::K_mu, dat::gtemp, nx, dat::sigma);
-        filterKernelZ<<<dimGrid, dimBlock>>>(dat::K_mu, dat::gtemp, dat::gsum, nz, dat::sigma);
-        filterKernelX<<<dimGrid, dimBlock>>>(dat::K_lambda, dat::gtemp, nx, dat::sigma);
-        filterKernelZ<<<dimGrid, dimBlock>>>(dat::K_lambda, dat::gtemp, dat::gsum, nz, dat::sigma);
+        normKernel<<<nxb, nzt>>>(dat::K_rho, dat::rho_start, dat::misfit_init);
+        normKernel<<<nxb, nzt>>>(dat::K_mu, dat::mu_start, dat::misfit_init);
+        normKernel<<<nxb, nzt>>>(dat::K_lambda, dat::lambda_start, dat::misfit_init);
+        filterKernelX<<<nxb, nzt>>>(dat::K_rho, dat::gtemp, nx, dat::sigma);
+        filterKernelZ<<<nxb, nzt>>>(dat::K_rho, dat::gtemp, dat::gsum, nz, dat::sigma);
+        filterKernelX<<<nxb, nzt>>>(dat::K_mu, dat::gtemp, nx, dat::sigma);
+        filterKernelZ<<<nxb, nzt>>>(dat::K_mu, dat::gtemp, dat::gsum, nz, dat::sigma);
+        filterKernelX<<<nxb, nzt>>>(dat::K_lambda, dat::gtemp, nx, dat::sigma);
+        filterKernelZ<<<nxb, nzt>>>(dat::K_lambda, dat::gtemp, dat::gsum, nz, dat::sigma);
     }
 
     return misfit / dat::misfit_init;
@@ -1193,13 +1197,11 @@ static float calculateStepLength(float teststep, float misfit, int iter){
     }
     misfitArray[0] = misfit;
 
-    dim3 dimGrid(dat::nx, nbt);
-    dim3 dimBlock(dat::nz / nbt);
     for(int i = 1; i < nsteps; i++){
         float steptry = stepInArray[i] - stepInArray[i-1];
-        updateModel<<<dimGrid, dimBlock>>>(dat::lambda, dat::K_lambda, steptry);
-        updateModel<<<dimGrid, dimBlock>>>(dat::mu, dat::K_mu, steptry);
-        updateModel<<<dimGrid, dimBlock>>>(dat::rho, dat::K_rho, steptry);
+        updateModel<<<nxb, nzt>>>(dat::lambda, dat::K_lambda, steptry);
+        updateModel<<<nxb, nzt>>>(dat::mu, dat::K_mu, steptry);
+        updateModel<<<nxb, nzt>>>(dat::rho, dat::K_rho, steptry);
         misfitArray[i] = computeKernels(0);
     }
 
@@ -1231,9 +1233,7 @@ static void inversionRoutine(){
     dat::sigma = 2;
     dat::gsum = mat::create(nx, nz);
     dat::gtemp = mat::create(nx, nz);
-    dim3 dimGrid(nx, nbt);
-    dim3 dimBlock(nz / nbt);
-    initialiseGaussian<<<dimGrid, dimBlock>>>(dat::gsum, nx, nz, dat::sigma);
+    initialiseGaussian<<<nxb, nzt>>>(dat::gsum, nx, nz, dat::sigma);
 
     // adjoint related parameters
     dat::obs_type = 1;
@@ -1242,17 +1242,17 @@ static void inversionRoutine(){
     for(int iter = 0; iter < niter; iter++){
         float misfit = computeKernels(1);
         printf("misfit_normed = %f\n", misfit); // later
-        step = calculateStepLength(step, misfit, iter);
+        // step = calculateStepLength(step, misfit, iter);
 
-        // float **lambda = mat::createHost(nx,nz);
-        // float **mu = mat::createHost(nx,nz);
-        // float **rho = mat::createHost(nx,nz);
-        // mat::copyDeviceToHost(rho, dat::K_rho, dat::nx, dat::nz);
-        // mat::copyDeviceToHost(mu, dat::K_mu, dat::nx, dat::nz);
-        // mat::copyDeviceToHost(lambda, dat::K_lambda, dat::nx, dat::nz);
-        // mat::write(rho, dat::nx, dat::nz, "rho");
-        // mat::write(mu, dat::nx, dat::nz, "mu");
-        // mat::write(lambda, dat::nx, dat::nz, "lambda");
+        float **lambda = mat::createHost(nx,nz);
+        float **mu = mat::createHost(nx,nz);
+        float **rho = mat::createHost(nx,nz);
+        mat::copyDeviceToHost(rho, dat::K_rho, dat::nx, dat::nz);
+        mat::copyDeviceToHost(mu, dat::K_mu, dat::nx, dat::nz);
+        mat::copyDeviceToHost(lambda, dat::K_lambda, dat::nx, dat::nz);
+        mat::write(rho, dat::nx, dat::nz, "rho");
+        mat::write(mu, dat::nx, dat::nz, "mu");
+        mat::write(lambda, dat::nx, dat::nz, "lambda");
     }
 
 }
