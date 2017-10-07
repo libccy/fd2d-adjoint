@@ -1,5 +1,5 @@
 clc;
-cfg = 0;
+cfg = 3;
 
 [nx, nz, nt, nrec, nsfe, dt] = getn;
 if cfg >= 0

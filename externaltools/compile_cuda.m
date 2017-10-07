@@ -7,7 +7,7 @@ function [] = compile_cuda(fname, rmlink)
     end
 
     fid = fopen('externaltools\\compile_cuda.bat','w');
-    fprintf(fid,strcat('VCVARS32.BAT&&nvcc externaltools\\',fname,'.cu externaltools\\lbfgs.c -arch=sm_50  -Xcompiler "/wd4819" -o externaltools\\',fname,'.exe'));
+    fprintf(fid,strcat('VCVARS32.BAT&&nvcc externaltools\\',fname,'.cu -arch=sm_50  -Xcompiler "/wd4819" -o externaltools\\',fname,'.exe'));
     fclose(fid);
 
     system('externaltools\\compile_cuda.bat');

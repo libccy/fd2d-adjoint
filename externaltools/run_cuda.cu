@@ -3,7 +3,6 @@
 #include <math.h>
 #include <string.h>
 #include "ArduinoJson.h"
-#include "lbfgs.h"
 
 #define devij int i = blockIdx.x, j = threadIdx.x + blockIdx.y * blockDim.x
 
@@ -734,22 +733,6 @@ static void checkMemoryUsage(){
 
     printf("memory usage: %.1fMB / %.1fMB\n", used_db / 1024.0 / 1024.0, total_db / 1024.0 / 1024.0);
 }
-static void mapModelToVector(float *k, float **lambda, float **mu, float **rho){
-    int &nx = dat::nx;
-    int &nz = dat::nz;
-    int length = nx * nz;
-    mat::copyDeviceToHost(k, lambda, nx, nz);
-    mat::copyDeviceToHost(k + length, mu, nx, nz);
-    mat::copyDeviceToHost(k + length * 2, rho, nx, nz);
-}
-static void mapVectorToModel(float *k, float **lambda, float **mu, float **rho){
-    int &nx = dat::nx;
-    int &nz = dat::nz;
-    int length = nx * nz;
-    mat::copyHostToDevice(lambda, k, nx, nz);
-    mat::copyHostToDevice(mu, k + length, nx, nz);
-    mat::copyHostToDevice(rho, k + length * 2, nx, nz);
-}
 static void makeSourceTimeFunction(float *stf, int index){
     float max = 0;
     float alfa = 2 * dat::tauw_0[index] / dat::tauw[index];
@@ -1194,53 +1177,18 @@ static float computeKernels(int kernel){
         filterKernelX<<<dimGrid, dimBlock>>>(dat::K_lambda, dat::gtemp, nx, dat::sigma);
         filterKernelZ<<<dimGrid, dimBlock>>>(dat::K_lambda, dat::gtemp, dat::gsum, nz, dat::sigma);
     }
+    printf("misfit = %e\n", misfit); // later
 
-    return misfit;
+    return misfit / dat::misfit_init;
 }
 static float computeKernels(){
     return computeKernels(1);
 }
-
-static lbfgsfloatval_t evaluate(
-    void *instance,
-    const lbfgsfloatval_t *x,
-    lbfgsfloatval_t *g,
-    const int n,
-    const lbfgsfloatval_t step
-    ){
-    mapVectorToModel((float *)x, dat::lambda, dat::mu, dat::rho);
-    lbfgsfloatval_t fx = computeKernels();
-    mapModelToVector((float *)g, dat::K_lambda, dat::K_mu, dat::K_rho);
-
-    return fx;
-}
-
-static int progress(
-    void *instance,
-    const lbfgsfloatval_t *x,
-    const lbfgsfloatval_t *g,
-    const lbfgsfloatval_t fx,
-    const lbfgsfloatval_t xnorm,
-    const lbfgsfloatval_t gnorm,
-    const lbfgsfloatval_t step,
-    int n,
-    int k,
-    int ls
-    ){
-    printf("Iteration %d:\n", k);
-    printf("  fx = %f, x[0] = %f, x[1] = %f\n", fx, x[0], x[1]);
-    printf("  xnorm = %f, gnorm = %f, step = %f\n", xnorm, gnorm, step);
-    printf("\n");
-    return 0;
-}
-
 static void inversionRoutine(){
     int &nx = dat::nx;
     int &nz = dat::nz;
     int &nt = dat::nt;
     float &dt = dat::dt;
-
-    dat::obs_type = 1;
 
     // model start
     dat::rho_start = mat::create(nx, nz);
@@ -1262,37 +1210,9 @@ static void inversionRoutine(){
     dim3 dimBlock(nz / nbt);
     initialiseGaussian<<<dimGrid, dimBlock>>>(dat::gsum, nx, nz, dat::sigma);
 
+    // adjoint related parameters
+    dat::obs_type = 1;
     dat::misfit_init = -1;
-
-    int N = nx * nz * 3;
-    int ret = 0;
-    lbfgsfloatval_t fx;
-    lbfgsfloatval_t *x = lbfgs_malloc(N);
-    lbfgs_parameter_t param;
-
-    /* Initialize the variables. */
-    mapModelToVector((float *)x, dat::lambda, dat::mu, dat::rho);
-
-    /* Initialize the parameters for the L-BFGS optimization. */
-    lbfgs_parameter_init(&param);
-    /*param.linesearch = LBFGS_LINESEARCH_BACKTRACKING;*/
-
-    /*
-        Start the L-BFGS optimization; this will invoke the callback functions
-        evaluate() and progress() when necessary.
-     */
-    ret = lbfgs(N, x, &fx, evaluate, progress, NULL, &param);
-
-    /* Report the result. */
-    printf("L-BFGS optimization terminated with status code = %d\n", ret);
-    printf("  fx = %e, x[0] = %e, x[1] = %e, x[2] = %f\n", fx, x[0], x[1],x[2]);
-
-    mapModelToVector((float *)x, dat::K_lambda, dat::K_mu, dat::K_rho);
-    mat::write((float *)x,N,"t");
-
-    printf("%d %d\n",LBFGSERR_WIDTHTOOSMALL,LBFGSERR_INCREASEGRADIENT);
-
-    lbfgs_free(x);
 
     float misfit = computeKernels();
 
@@ -1307,7 +1227,7 @@ static void inversionRoutine(){
     mat::write(mu, dat::nx, dat::nz, "mu");
     mat::write(lambda, dat::nx, dat::nz, "lambda");
 
-    printf("misfit=%e\n", misfit);
+    printf("misfit_normed = %f\n", misfit);
 }
 static void runSyntheticInvertion(){
     int &nsrc = dat::nsrc;
