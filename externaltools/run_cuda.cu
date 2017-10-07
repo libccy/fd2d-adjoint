@@ -334,6 +334,20 @@ namespace mat{
 dim3 &nxb = dat::nxb;
 dim3 &nzt = dat::nzt;
 
+int &sh = dat::wave_propagation_sh;
+int &psv = dat::wave_propagation_psv;
+int &mode = dat::simulation_mode;
+
+int &nx = dat::nx;
+int &nz = dat::nz;
+int &nt = dat::nt;
+int &nsrc = dat::nsrc;
+int &nrec = dat::nrec;
+
+float &dx = dat::dx;
+float &dz = dat::dz;
+float &dt = dat::dt;
+
 __global__ void divSY(float **dsy, float **sxy, float **szy, float dx, float dz, int nx, int nz){
     devij;
     if(i >= 2 && i < nx - 2){
@@ -651,19 +665,19 @@ static void importData(){
                 int single_src = root["src_info"].is<JsonObject>();
                 dat::nsrc = single_src?1:root["src_info"].size();
 
-                float *src_x = mat::createHost(dat::nsrc);
-                float *src_z = mat::createHost(dat::nsrc);
+                float *src_x = mat::createHost(nsrc);
+                float *src_z = mat::createHost(nsrc);
 
-                dat::stf_type = mat::createIntHost(dat::nsrc);
-                dat::stf_PSV_x = mat::createHost(dat::nsrc);
-                dat::stf_PSV_z = mat::createHost(dat::nsrc);
-                dat::tauw_0 = mat::createHost(dat::nsrc);
-                dat::tauw = mat::createHost(dat::nsrc);
-                dat::tee_0 = mat::createHost(dat::nsrc);
-                dat::f_min = mat::createHost(dat::nsrc);
-                dat::f_max = mat::createHost(dat::nsrc);
+                dat::stf_type = mat::createIntHost(nsrc);
+                dat::stf_PSV_x = mat::createHost(nsrc);
+                dat::stf_PSV_z = mat::createHost(nsrc);
+                dat::tauw_0 = mat::createHost(nsrc);
+                dat::tauw = mat::createHost(nsrc);
+                dat::tee_0 = mat::createHost(nsrc);
+                dat::f_min = mat::createHost(nsrc);
+                dat::f_max = mat::createHost(nsrc);
 
-                for(int isrc = 0; isrc < dat::nsrc; isrc++){
+                for(int isrc = 0; isrc < nsrc; isrc++){
                     JsonObject& src = single_src?root["src_info"]:((JsonArray&)root["src_info"]).get<JsonObject>(isrc);
                     src_x[isrc] = src["loc_x"];
                     src_z[isrc] = src["loc_z"];
@@ -694,11 +708,11 @@ static void importData(){
                     }
                 }
 
-                dat::src_x = mat::create(dat::nsrc);
-                dat::src_z = mat::create(dat::nsrc);
+                dat::src_x = mat::create(nsrc);
+                dat::src_z = mat::create(nsrc);
 
-                mat::copyHostToDevice(dat::src_x, src_x, dat::nsrc);
-                mat::copyHostToDevice(dat::src_z, src_z, dat::nsrc);
+                mat::copyHostToDevice(dat::src_x, src_x, nsrc);
+                mat::copyHostToDevice(dat::src_z, src_z, nsrc);
 
                 free(src_x);
                 free(src_z);
@@ -708,19 +722,19 @@ static void importData(){
                 int single_rec = root["rec_x"].is<float>();
                 dat::nrec = single_rec?1:root["rec_x"].size();
 
-                float *rec_x = mat::createHost(dat::nrec);
-                float *rec_z = mat::createHost(dat::nrec);
+                float *rec_x = mat::createHost(nrec);
+                float *rec_z = mat::createHost(nrec);
 
-                for(int irec = 0; irec < dat::nrec; irec++){
+                for(int irec = 0; irec < nrec; irec++){
                     rec_x[irec] = single_rec?root["rec_x"]:((JsonArray&)root["rec_x"]).get<float>(irec);
                     rec_z[irec] = single_rec?root["rec_z"]:((JsonArray&)root["rec_z"]).get<float>(irec);
                 }
 
-                dat::rec_x = mat::create(dat::nrec);
-                dat::rec_z = mat::create(dat::nrec);
+                dat::rec_x = mat::create(nrec);
+                dat::rec_z = mat::create(nrec);
 
-                mat::copyHostToDevice(dat::rec_x, rec_x, dat::nrec);
-                mat::copyHostToDevice(dat::rec_z, rec_z, dat::nrec);
+                mat::copyHostToDevice(dat::rec_x, rec_x, nrec);
+                mat::copyHostToDevice(dat::rec_z, rec_z, nrec);
 
                 free(rec_x);
                 free(rec_z);
@@ -742,8 +756,8 @@ static void checkMemoryUsage(){
 static void makeSourceTimeFunction(float *stf, int index){
     float max = 0;
     float alfa = 2 * dat::tauw_0[index] / dat::tauw[index];
-    for(int it = 0; it < dat::nt; it++){
-        float t = it * dat::dt;
+    for(int it = 0; it < nt; it++){
+        float t = it * dt;
         switch(dat::stf_type[index]){
             case 2:{
                 stf[it] = (-2 * pow(alfa, 3) / pi) * (t - dat::tee_0[index]) * exp(-pow(alfa, 2) * pow(t - dat::tee_0[index], 2));
@@ -757,20 +771,19 @@ static void makeSourceTimeFunction(float *stf, int index){
         }
     }
     if(max > 0){
-        for(int it = 0; it < dat::nt; it++){
+        for(int it = 0; it < nt; it++){
             stf[it] /= max;
         }
     }
 }
 static void prepareSTF(){
-    int &nt = dat::nt;
-    float amp = dat::source_amplitude / dat::dx / dat::dz;
-    float **stf_x = mat::createHost(dat::nsrc, dat::nt);
-    float **stf_y = mat::createHost(dat::nsrc, dat::nt);
-    float **stf_z = mat::createHost(dat::nsrc, dat::nt);
-    float *stfn = mat::createHost(dat::nt);
+    float amp = dat::source_amplitude / dx / dz;
+    float **stf_x = mat::createHost(nsrc, nt);
+    float **stf_y = mat::createHost(nsrc, nt);
+    float **stf_z = mat::createHost(nsrc, nt);
+    float *stfn = mat::createHost(nt);
 
-    for(int isrc = 0; isrc < dat::nsrc; isrc++){
+    for(int isrc = 0; isrc < nsrc; isrc++){
         makeSourceTimeFunction(stfn, isrc);
         float px = dat::stf_PSV_x[isrc];
         float pz = dat::stf_PSV_z[isrc];
@@ -782,9 +795,9 @@ static void prepareSTF(){
         }
     }
 
-    mat::copyHostToDevice(dat::stf_x, stf_x, dat::nsrc, dat::nt);
-    mat::copyHostToDevice(dat::stf_y, stf_y, dat::nsrc, dat::nt);
-    mat::copyHostToDevice(dat::stf_z, stf_z, dat::nsrc, dat::nt);
+    mat::copyHostToDevice(dat::stf_x, stf_x, nsrc, nt);
+    mat::copyHostToDevice(dat::stf_y, stf_y, nsrc, nt);
+    mat::copyHostToDevice(dat::stf_z, stf_z, nsrc, nt);
 
     free(*stf_x);
     free(*stf_y);
@@ -796,8 +809,6 @@ static void prepareSTF(){
 }
 static void defineMaterialParameters(){
     // other model_type: later
-    int &nx = dat::nx;
-    int &nz = dat::nz;
     switch(dat::model_type){
         case 1:{
             mat::init(dat::rho, nx, nz, 3000);
@@ -839,15 +850,13 @@ static void defineMaterialParameters(){
     }
 }
 static void initialiseDynamicFields(){
-    int &nx = dat::nx;
-    int &nz = dat::nz;
-    if(dat::wave_propagation_sh){
+    if(sh){
         mat::init(dat::vy, nx, nz, 0);
         mat::init(dat::uy, nx, nz, 0);
         mat::init(dat::sxy, nx, nz, 0);
         mat::init(dat::szy, nx, nz, 0);
     }
-    if(dat::wave_propagation_psv){
+    if(psv){
         mat::init(dat::vx, nx, nz, 0);
         mat::init(dat::vz, nx, nz, 0);
         mat::init(dat::ux, nx, nz, 0);
@@ -858,26 +867,14 @@ static void initialiseDynamicFields(){
     }
 }
 static void initialiseKernels(){
-    int &nx = dat::nx;
-    int &nz = dat::nz;
     mat::init(dat::K_lambda, nx, nz, 0);
     mat::init(dat::K_mu, nx, nz, 0);
     mat::init(dat::K_rho, nx, nz, 0);
 }
 static void runWaveFieldPropagation(){
-    int &sh = dat::wave_propagation_sh;
-    int &psv = dat::wave_propagation_psv;
-    int &mode = dat::simulation_mode;
-
-    int &nx = dat::nx;
-    int &nz = dat::nz;
-    float &dx = dat::dx;
-    float &dz = dat::dz;
-    float &dt = dat::dt;
-
     initialiseDynamicFields();
 
-    for(int it = 0; it < dat::nt; it++){
+    for(int it = 0; it < nt; it++){
         if(mode == 0){
             if((it + 1) % dat::sfe == 0){
                 int isfe = dat::nsfe - (it + 1) / dat::sfe;
@@ -898,13 +895,13 @@ static void runWaveFieldPropagation(){
             divSXZ<<<nxb, nzt>>>(dat::dsx, dat::dsz, dat::sxx, dat::szz, dat::sxz, dx, dz, nx, nz);
         }
         if(mode == 0){
-            addSTF<<<dat::nsrc, 1>>>(
+            addSTF<<<nsrc, 1>>>(
                 dat::dsx, dat::dsy, dat::dsz, dat::stf_x, dat::stf_y, dat::stf_z,
                 dat::src_x_id, dat::src_z_id, dat::isrc, sh, psv, it
             );
         }
         else if(mode == 1){
-            addSTF<<<dat::nrec, 1>>>(
+            addSTF<<<nrec, 1>>>(
                 dat::dsx, dat::dsy, dat::dsz, dat::adstf_x, dat::adstf_y, dat::adstf_z,
                 dat::rec_x_id, dat::rec_z_id, -1, sh, psv, it
             );
@@ -925,19 +922,19 @@ static void runWaveFieldPropagation(){
         }
         if(mode == 0){
             if(dat::obs_type == 0){
-                saveV<<<dat::nrec, 1>>>(
+                saveV<<<nrec, 1>>>(
                     dat::v_rec_x, dat::v_rec_y, dat::v_rec_z, dat::vx, dat::vy, dat::vz,
                     dat::rec_x_id, dat::rec_z_id, sh, psv, it
                 );
             }
             else if(dat::obs_type == 1){
-                saveV<<<dat::nrec, 1>>>(
+                saveV<<<nrec, 1>>>(
                     dat::v_rec_x, dat::v_rec_y, dat::v_rec_z, dat::ux, dat::uy, dat::uz,
                     dat::rec_x_id, dat::rec_z_id, sh, psv, it
                 );
             }
             else if(dat::obs_type == 2 && dat::isrc >= 0){
-                saveV<<<dat::nrec, 1>>>(
+                saveV<<<nrec, 1>>>(
                     dat::u_obs_x, dat::u_obs_y, dat::u_obs_z, dat::ux, dat::uy, dat::uz,
                     dat::rec_x_id, dat::rec_z_id, dat::isrc, sh, psv, it
                 );
@@ -992,21 +989,13 @@ static void runWaveFieldPropagation(){
     }
 }
 static void checkArgs(int adjoint){
-    int &sh = dat::wave_propagation_sh;
-    int &psv = dat::wave_propagation_psv;
+    dat::nxb = dim3(nx, nbt);
+    dat::nzt = dim3(nz / nbt);
 
-    int &nx = dat::nx;
-    int &nz = dat::nz;
-
-    dim3 dimGrid(dat::nx, nbt);
-    dim3 dimBlock(dat::nz / nbt);
-    dat::nxb = dimGrid;
-    dat::nzt = dimBlock;
-
-    if(dat::nt % dat::sfe != 0){
-        dat::nt = dat::sfe * (int)((float)dat::nt / dat::sfe + 0.5);
+    if(nt % dat::sfe != 0){
+        nt = dat::sfe * (int)((float)nt / dat::sfe + 0.5);
     }
-    dat::nsfe = dat::nt / dat::sfe;
+    dat::nsfe = nt / dat::sfe;
     dat::dx = dat::Lx / (nx - 1);
     dat::dz = dat::Lz / (nz - 1);
 
@@ -1019,7 +1008,7 @@ static void checkArgs(int adjoint){
         dat::dvydx = mat::create(nx, nz);
         dat::dvydz = mat::create(nx, nz);
 
-        dat::v_rec_y = mat::create(dat::nrec, dat::nt);
+        dat::v_rec_y = mat::create(nrec, nt);
         dat::uy_forward = mat::createHost(dat::nsfe, nx, nz);
         dat::vy_forward = mat::createHost(dat::nsfe, nx, nz);
     }
@@ -1038,8 +1027,8 @@ static void checkArgs(int adjoint){
         dat::dvzdx = mat::create(nx, nz);
         dat::dvzdz = mat::create(nx, nz);
 
-        dat::v_rec_x = mat::create(dat::nrec, dat::nt);
-        dat::v_rec_z = mat::create(dat::nrec, dat::nt);
+        dat::v_rec_x = mat::create(nrec, nt);
+        dat::v_rec_z = mat::create(nrec, nt);
         dat::ux_forward = mat::createHost(dat::nsfe, nx, nz);
         dat::uz_forward = mat::createHost(dat::nsfe, nx, nz);
         dat::vx_forward = mat::createHost(dat::nsfe, nx, nz);
@@ -1051,9 +1040,9 @@ static void checkArgs(int adjoint){
     dat::rho = mat::create(nx, nz);
     dat::mu = mat::create(nx, nz);
 
-    dat::stf_x = mat::create(dat::nsrc, dat::nt);
-    dat::stf_y = mat::create(dat::nsrc, dat::nt);
-    dat::stf_z = mat::create(dat::nsrc, dat::nt);
+    dat::stf_x = mat::create(nsrc, nt);
+    dat::stf_y = mat::create(nsrc, nt);
+    dat::stf_z = mat::create(nsrc, nt);
 
     if(adjoint){
         if(sh){
@@ -1071,32 +1060,32 @@ static void checkArgs(int adjoint){
         dat::K_mu = mat::create(nx, nz);
         dat::K_rho = mat::create(nx, nz);
 
-        dat::adstf_x = mat::create(dat::nrec, dat::nt);
-        dat::adstf_y = mat::create(dat::nrec, dat::nt);
-        dat::adstf_z = mat::create(dat::nrec, dat::nt);
+        dat::adstf_x = mat::create(nrec, nt);
+        dat::adstf_y = mat::create(nrec, nt);
+        dat::adstf_z = mat::create(nrec, nt);
     }
 
-    dat::src_x_id = mat::createInt(dat::nsrc);
-    dat::src_z_id = mat::createInt(dat::nsrc);
-    dat::rec_x_id = mat::createInt(dat::nrec);
-    dat::rec_z_id = mat::createInt(dat::nrec);
+    dat::src_x_id = mat::createInt(nsrc);
+    dat::src_z_id = mat::createInt(nsrc);
+    dat::rec_x_id = mat::createInt(nrec);
+    dat::rec_z_id = mat::createInt(nrec);
 
-    computeIndices<<<dat::nsrc, 1>>>(dat::src_x_id, dat::src_x, dat::Lx, dat::nx);
-    computeIndices<<<dat::nsrc, 1>>>(dat::src_z_id, dat::src_z, dat::Lz, dat::nz);
-    computeIndices<<<dat::nrec, 1>>>(dat::rec_x_id, dat::rec_x, dat::Lx, dat::nx);
-    computeIndices<<<dat::nrec, 1>>>(dat::rec_z_id, dat::rec_z, dat::Lz, dat::nz);
+    computeIndices<<<nsrc, 1>>>(dat::src_x_id, dat::src_x, dat::Lx, nx);
+    computeIndices<<<nsrc, 1>>>(dat::src_z_id, dat::src_z, dat::Lz, nz);
+    computeIndices<<<nrec, 1>>>(dat::rec_x_id, dat::rec_x, dat::Lx, nx);
+    computeIndices<<<nrec, 1>>>(dat::rec_z_id, dat::rec_z, dat::Lz, nz);
 
     initialiseAbsorbingBoundaries<<<nxb, nzt>>>(
         dat::absbound, dat::absorb_width,
         dat::absorb_left, dat::absorb_right, dat::absorb_bottom, dat::absorb_top,
-        dat::Lx, dat::Lz, dat::dx, dat::dz
+        dat::Lx, dat::Lz, dx, dz
     );
 
-    float *t = mat::createHost(dat::nt);
-    for(int it = 0; it < dat::nt; it++){
-        t[it] = it * dat::dt;
+    float *t = mat::createHost(nt);
+    for(int it = 0; it < nt; it++){
+        t[it] = it * dt;
     }
-    mat::write(t, dat::nt, "t");
+    mat::write(t, nt, "t");
 }
 static void runForward(int isrc){
     dat::simulation_mode = 0;
@@ -1132,13 +1121,6 @@ static void runAdjoint(int init_kernel){
     // mat::write(dat::vz_forward, dat::nsfe, dat::nx, dat::nz, "vz");
 }
 static float computeKernels(int kernel){
-    int &nsrc = dat::nsrc;
-    int &nrec = dat::nrec;
-    int &nx = dat::nx;
-    int &nz = dat::nz;
-    int &nt = dat::nt;
-    float &dt = dat::dt;
-
     float *d_misfit = mat::create(nt);
     float *h_misfit = mat::createHost(nt);
     mat::init(d_misfit, nt, 0);
@@ -1212,11 +1194,6 @@ static void inversionRoutine(){
     int niter = 1;
     float step = 0.002;
 
-    int &nx = dat::nx;
-    int &nz = dat::nz;
-    int &nt = dat::nt;
-    float &dt = dat::dt;
-
     // model start
     dat::rho_start = mat::create(nx, nz);
     dat::mu_start = mat::create(nx, nz);
@@ -1247,20 +1224,16 @@ static void inversionRoutine(){
         float **lambda = mat::createHost(nx,nz);
         float **mu = mat::createHost(nx,nz);
         float **rho = mat::createHost(nx,nz);
-        mat::copyDeviceToHost(rho, dat::K_rho, dat::nx, dat::nz);
-        mat::copyDeviceToHost(mu, dat::K_mu, dat::nx, dat::nz);
-        mat::copyDeviceToHost(lambda, dat::K_lambda, dat::nx, dat::nz);
-        mat::write(rho, dat::nx, dat::nz, "rho");
-        mat::write(mu, dat::nx, dat::nz, "mu");
-        mat::write(lambda, dat::nx, dat::nz, "lambda");
+        mat::copyDeviceToHost(rho, dat::K_rho, nx, nz);
+        mat::copyDeviceToHost(mu, dat::K_mu, nx, nz);
+        mat::copyDeviceToHost(lambda, dat::K_lambda, nx, nz);
+        mat::write(rho, nx, nz, "rho");
+        mat::write(mu, nx, nz, "mu");
+        mat::write(lambda, nx, nz, "lambda");
     }
 
 }
 static void runSyntheticInvertion(){
-    int &nsrc = dat::nsrc;
-    int &nrec = dat::nrec;
-    int &nt = dat::nt;
-
     checkArgs(1);
     dat::obs_type = 2; // save displacement persouce
     dat::model_type = 13; // true model: later
