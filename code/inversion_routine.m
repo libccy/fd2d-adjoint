@@ -604,7 +604,7 @@ for iter = istart : InvProps.niter;
 
     %% clean up
     rmdir([output_path,'/fwd_temp'], 's');
-
+return;
 end
 
 

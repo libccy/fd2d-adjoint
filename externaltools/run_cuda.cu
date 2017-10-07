@@ -1177,14 +1177,39 @@ static float computeKernels(int kernel){
         filterKernelX<<<dimGrid, dimBlock>>>(dat::K_lambda, dat::gtemp, nx, dat::sigma);
         filterKernelZ<<<dimGrid, dimBlock>>>(dat::K_lambda, dat::gtemp, dat::gsum, nz, dat::sigma);
     }
-    printf("misfit = %e\n", misfit); // later
 
     return misfit / dat::misfit_init;
 }
-static float computeKernels(){
-    return computeKernels(1);
+static float *fitPolynomial(float *stepInArray, float *misfitArray, int n){
+    float *ps = mat::createHost(4);
+    return ps;
+}
+static float calculateStepLength(float teststep, float misfit, int iter){
+    int nsteps = iter?3:5;
+    float *stepInArray = mat::createHost(nsteps);
+    float *misfitArray = mat::createHost(nsteps);
+    for(int i = 0; i < nsteps; i++){
+        stepInArray[i] = 2 * i * teststep / (nsteps - 1);
+    }
+    misfitArray[0] = misfit;
+
+    dim3 dimGrid(dat::nx, nbt);
+    dim3 dimBlock(dat::nz / nbt);
+    for(int i = 1; i < nsteps; i++){
+        float steptry = stepInArray[i] - stepInArray[i-1];
+        updateModel<<<dimGrid, dimBlock>>>(dat::lambda, dat::K_lambda, steptry);
+        updateModel<<<dimGrid, dimBlock>>>(dat::mu, dat::K_mu, steptry);
+        updateModel<<<dimGrid, dimBlock>>>(dat::rho, dat::K_rho, steptry);
+        misfitArray[i] = computeKernels(0);
+    }
+
+    float *ps = fitPolynomial(stepInArray, misfitArray, nsteps);
+    return 1;
 }
 static void inversionRoutine(){
+    int niter = 1;
+    float step = 0.002;
+
     int &nx = dat::nx;
     int &nz = dat::nz;
     int &nt = dat::nt;
@@ -1214,20 +1239,22 @@ static void inversionRoutine(){
     dat::obs_type = 1;
     dat::misfit_init = -1;
 
-    float misfit = computeKernels();
+    for(int iter = 0; iter < niter; iter++){
+        float misfit = computeKernels(1);
+        printf("misfit_normed = %f\n", misfit); // later
+        step = calculateStepLength(step, misfit, iter);
 
+        // float **lambda = mat::createHost(nx,nz);
+        // float **mu = mat::createHost(nx,nz);
+        // float **rho = mat::createHost(nx,nz);
+        // mat::copyDeviceToHost(rho, dat::K_rho, dat::nx, dat::nz);
+        // mat::copyDeviceToHost(mu, dat::K_mu, dat::nx, dat::nz);
+        // mat::copyDeviceToHost(lambda, dat::K_lambda, dat::nx, dat::nz);
+        // mat::write(rho, dat::nx, dat::nz, "rho");
+        // mat::write(mu, dat::nx, dat::nz, "mu");
+        // mat::write(lambda, dat::nx, dat::nz, "lambda");
+    }
 
-    float **lambda = mat::createHost(nx,nz);
-    float **mu = mat::createHost(nx,nz);
-    float **rho = mat::createHost(nx,nz);
-    mat::copyDeviceToHost(rho, dat::K_rho, dat::nx, dat::nz);
-    mat::copyDeviceToHost(mu, dat::K_mu, dat::nx, dat::nz);
-    mat::copyDeviceToHost(lambda, dat::K_lambda, dat::nx, dat::nz);
-    mat::write(rho, dat::nx, dat::nz, "rho");
-    mat::write(mu, dat::nx, dat::nz, "mu");
-    mat::write(lambda, dat::nx, dat::nz, "lambda");
-
-    printf("misfit_normed = %f\n", misfit);
 }
 static void runSyntheticInvertion(){
     int &nsrc = dat::nsrc;
