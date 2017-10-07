@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
+#include <cublas_v2.h>
+#include <cusolverDn.h>
 #include "ArduinoJson.h"
 
 #define devij int i = blockIdx.x, j = threadIdx.x + blockIdx.y * blockDim.x
@@ -597,7 +599,73 @@ __global__ void calculateMisfit(float *misfit, float **u_syn, float ***u_obs, fl
     float wavedif = (u_syn[irec][it] - u_obs[isrc][irec][it]) * tw[it];
     misfit[it] += wavedif * wavedif * dt;
 }
+__global__ void reduceSystem(const float * __restrict d_in1, float * __restrict d_out1, const float * __restrict d_in2, float * __restrict d_out2, const int M, const int N) {
+    const int i = blockIdx.x;
+    const int j = threadIdx.x;
 
+    if ((i < N) && (j < N)){
+        d_out1[j * N + i] = d_in1[j * M + i];
+        d_out2[j * N + i] = d_in2[j * M + i];
+    }
+}
+
+static void solveQR(float *h_A, float *h_B, float *XC, const int Nrows, const int Ncols){
+    int work_size = 0;
+    int *devInfo = mat::createInt(1);
+
+    cusolverDnHandle_t solver_handle;
+    cusolverDnCreate(&solver_handle);
+
+    cublasHandle_t cublas_handle;
+    cublasCreate(&cublas_handle);
+
+    float *d_A = mat::create(Nrows * Ncols);
+    mat::copyHostToDevice(d_A, h_A, Nrows * Ncols);
+
+    float *d_TAU = mat::create(min(Nrows, Ncols));
+    cusolverDnSgeqrf_bufferSize(solver_handle, Nrows, Ncols, d_A, Nrows, &work_size);
+    float *work = mat::create(work_size);
+
+    cusolverDnSgeqrf(solver_handle, Nrows, Ncols, d_A, Nrows, d_TAU, work, work_size, devInfo);
+
+    float *d_Q = mat::create(Nrows * Nrows);
+    cusolverDnSormqr(solver_handle, CUBLAS_SIDE_LEFT, CUBLAS_OP_N, Nrows, Ncols, min(Nrows, Ncols), d_A, Nrows, d_TAU, d_Q, Nrows, work, work_size, devInfo);
+
+    float *d_C = mat::create(Nrows * Nrows);
+    mat::init(d_C, Nrows * Nrows, 0);
+    mat::copyHostToDevice(d_C, h_B, Nrows);
+
+    cusolverDnSormqr(solver_handle, CUBLAS_SIDE_LEFT, CUBLAS_OP_T, Nrows, Ncols, min(Nrows, Ncols), d_A, Nrows, d_TAU, d_C, Nrows, work, work_size, devInfo);
+
+    float *d_R = mat::create(Ncols * Ncols);
+    float *d_B = mat::create(Ncols * Ncols);
+    reduceSystem<<<Ncols, Ncols>>>(d_A, d_R, d_C, d_B, Nrows, Ncols);
+
+    const float alpha = 1.;
+    cublasStrsm(cublas_handle, CUBLAS_SIDE_LEFT, CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N, CUBLAS_DIAG_NON_UNIT, Ncols, Ncols,
+        &alpha, d_R, Ncols, d_B, Ncols);
+    mat::copyDeviceToHost(XC, d_B, Ncols);
+
+    cudaFree(d_A);
+    cudaFree(d_B);
+    cudaFree(d_C);
+    cudaFree(d_Q);
+    cudaFree(d_R);
+    cudaFree(d_TAU);
+    cudaFree(devInfo);
+    cudaFree(work);
+    cublasDestroy(cublas_handle);
+    cusolverDnDestroy(solver_handle);
+}
+static void fitPolynomial(float *x, float *y, float *out, int n){
+    float *A = mat::createHost(n * 3);
+    for(int i = 0; i < n; i++){
+        A[i] = x[i] * x[i];
+        A[i + n] = x[i];
+        A[i + n * 2] = 1;
+    }
+    solveQR(A, y, out, n, 3);
+}
 static void importData(){
     FILE *datfile = fopen("externaltools/config","r");
 
@@ -1166,10 +1234,6 @@ static float computeKernels(int kernel){
 
     return misfit / dat::misfit_init;
 }
-static float *fitPolynomial(float *stepInArray, float *misfitArray, int n){
-    float *ps = mat::createHost(4);
-    return ps;
-}
 static float calculateStepLength(float teststep, float misfit, int iter){
     int nsteps = iter?3:5;
     float *stepInArray = mat::createHost(nsteps);
@@ -1187,7 +1251,7 @@ static float calculateStepLength(float teststep, float misfit, int iter){
         misfitArray[i] = computeKernels(0);
     }
 
-    float *ps = fitPolynomial(stepInArray, misfitArray, nsteps);
+    // float *ps = fitPolynomial(stepInArray, misfitArray, nsteps);
     return 1;
 }
 static void inversionRoutine(){
