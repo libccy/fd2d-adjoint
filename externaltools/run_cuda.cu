@@ -143,6 +143,10 @@ namespace mat{
         int i = blockIdx.x;
         mat[i] = init;
     }
+    __global__ void _setValue(double *mat, const double init){
+        int i = blockIdx.x;
+        mat[i] = init;
+    }
     __global__ void _setValue(float **mat, const float init){
         devij;
         mat[i][j] = init;
@@ -163,8 +167,11 @@ namespace mat{
         mat[i][j] = init[i][j];
     }
 
-
     float *init(float *mat, const int m, const float init){
+        mat::_setValue<<<m, 1>>>(mat, init);
+        return mat;
+    }
+    double *init(double *mat, const int m, const double init){
         mat::_setValue<<<m, 1>>>(mat, init);
         return mat;
     }
@@ -250,6 +257,14 @@ namespace mat{
     }
     int *createIntHost(const int m) {
     	return (int *)malloc(m * sizeof(int));
+    }
+    double *createDouble(const int m){
+        double *a;
+    	cudaMalloc((void**)&a, m * sizeof(double));
+    	return a;
+    }
+    double *createDoubleHost(const int m) {
+    	return (double *)malloc(m * sizeof(double));
     }
 
     void copy(float **mat, float **init, const int m, const int n){
@@ -571,8 +586,9 @@ __global__ void filterKernelZ(float **model, float **gtemp, float **gsum, int nz
     }
     model[i][j] = sumz / gsum[i][j];
 }
-__global__ void updateModel(float **model, float **kernel, float step){
+__global__ void updateModel(float **model, float **kernel, float step, float step_prev){
     devij;
+    model[i][j] /= (1 - step_prev * kernel[i][j]);
     model[i][j] *= (1 - step * kernel[i][j]);
 }
 __global__ void getTaperWeights(float *tw, float dt, int nt){
@@ -599,7 +615,7 @@ __global__ void calculateMisfit(float *misfit, float **u_syn, float ***u_obs, fl
     float wavedif = (u_syn[irec][it] - u_obs[isrc][irec][it]) * tw[it];
     misfit[it] += wavedif * wavedif * dt;
 }
-__global__ void reduceSystem(const float * __restrict d_in1, float * __restrict d_out1, const float * __restrict d_in2, float * __restrict d_out2, const int M, const int N) {
+__global__ void reduceSystem(const double * __restrict d_in1, double * __restrict d_out1, const double * __restrict d_in2, double * __restrict d_out2, const int M, const int N) {
     const int i = blockIdx.x;
     const int j = threadIdx.x;
 
@@ -609,7 +625,7 @@ __global__ void reduceSystem(const float * __restrict d_in1, float * __restrict 
     }
 }
 
-static void solveQR(float *h_A, float *h_B, float *XC, const int Nrows, const int Ncols){
+static void solveQR(double *h_A, double *h_B, double *XC, const int Nrows, const int Ncols){
     int work_size = 0;
     int *devInfo = mat::createInt(1);
 
@@ -619,32 +635,32 @@ static void solveQR(float *h_A, float *h_B, float *XC, const int Nrows, const in
     cublasHandle_t cublas_handle;
     cublasCreate(&cublas_handle);
 
-    float *d_A = mat::create(Nrows * Ncols);
-    mat::copyHostToDevice(d_A, h_A, Nrows * Ncols);
+    double *d_A = mat::createDouble(Nrows * Ncols);
+    cudaMemcpy(d_A, h_A, Nrows * Ncols * sizeof(double), cudaMemcpyHostToDevice);
 
-    float *d_TAU = mat::create(min(Nrows, Ncols));
-    cusolverDnSgeqrf_bufferSize(solver_handle, Nrows, Ncols, d_A, Nrows, &work_size);
-    float *work = mat::create(work_size);
+    double *d_TAU = mat::createDouble(min(Nrows, Ncols));
+    cusolverDnDgeqrf_bufferSize(solver_handle, Nrows, Ncols, d_A, Nrows, &work_size);
+    double *work = mat::createDouble(work_size);
 
-    cusolverDnSgeqrf(solver_handle, Nrows, Ncols, d_A, Nrows, d_TAU, work, work_size, devInfo);
+    cusolverDnDgeqrf(solver_handle, Nrows, Ncols, d_A, Nrows, d_TAU, work, work_size, devInfo);
 
-    float *d_Q = mat::create(Nrows * Nrows);
-    cusolverDnSormqr(solver_handle, CUBLAS_SIDE_LEFT, CUBLAS_OP_N, Nrows, Ncols, min(Nrows, Ncols), d_A, Nrows, d_TAU, d_Q, Nrows, work, work_size, devInfo);
+    double *d_Q = mat::createDouble(Nrows * Nrows);
+    cusolverDnDormqr(solver_handle, CUBLAS_SIDE_LEFT, CUBLAS_OP_N, Nrows, Ncols, min(Nrows, Ncols), d_A, Nrows, d_TAU, d_Q, Nrows, work, work_size, devInfo);
 
-    float *d_C = mat::create(Nrows * Nrows);
+    double *d_C = mat::createDouble(Nrows * Nrows);
     mat::init(d_C, Nrows * Nrows, 0);
-    mat::copyHostToDevice(d_C, h_B, Nrows);
+    cudaMemcpy(d_C, h_B, Nrows * sizeof(double), cudaMemcpyHostToDevice);
 
-    cusolverDnSormqr(solver_handle, CUBLAS_SIDE_LEFT, CUBLAS_OP_T, Nrows, Ncols, min(Nrows, Ncols), d_A, Nrows, d_TAU, d_C, Nrows, work, work_size, devInfo);
+    cusolverDnDormqr(solver_handle, CUBLAS_SIDE_LEFT, CUBLAS_OP_T, Nrows, Ncols, min(Nrows, Ncols), d_A, Nrows, d_TAU, d_C, Nrows, work, work_size, devInfo);
 
-    float *d_R = mat::create(Ncols * Ncols);
-    float *d_B = mat::create(Ncols * Ncols);
+    double *d_R = mat::createDouble(Ncols * Ncols);
+    double *d_B = mat::createDouble(Ncols * Ncols);
     reduceSystem<<<Ncols, Ncols>>>(d_A, d_R, d_C, d_B, Nrows, Ncols);
 
-    const float alpha = 1.;
-    cublasStrsm(cublas_handle, CUBLAS_SIDE_LEFT, CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N, CUBLAS_DIAG_NON_UNIT, Ncols, Ncols,
+    const double alpha = 1.;
+    cublasDtrsm(cublas_handle, CUBLAS_SIDE_LEFT, CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N, CUBLAS_DIAG_NON_UNIT, Ncols, Ncols,
         &alpha, d_R, Ncols, d_B, Ncols);
-    mat::copyDeviceToHost(XC, d_B, Ncols);
+    cudaMemcpy(XC, d_B, Ncols * sizeof(double), cudaMemcpyDeviceToHost);
 
     cudaFree(d_A);
     cudaFree(d_B);
@@ -657,14 +673,20 @@ static void solveQR(float *h_A, float *h_B, float *XC, const int Nrows, const in
     cublasDestroy(cublas_handle);
     cusolverDnDestroy(solver_handle);
 }
-static void fitPolynomial(float *x, float *y, float *out, int n){
-    float *A = mat::createHost(n * 3);
+static double polyfit(double *x, double *y, double *p, int n){
+    double *A = mat::createDoubleHost(3 * n);
     for(int i = 0; i < n; i++){
         A[i] = x[i] * x[i];
         A[i + n] = x[i];
         A[i + n * 2] = 1;
     }
-    solveQR(A, y, out, n, 3);
+    solveQR(A, y, p, n, 3);
+    double rss = 0;
+    for(int i = 0; i < n; i++){
+        double ei = p[0] * x[i] * x[i] + p[1] * x[i] + p[2];
+        rss += pow(y[i] - ei, 2);
+    }
+    return rss;
 }
 static void importData(){
     FILE *datfile = fopen("externaltools/config","r");
@@ -1193,7 +1215,9 @@ static float computeKernels(int kernel){
     float *h_misfit = mat::createHost(nt);
     mat::init(d_misfit, nt, 0);
 
-    initialiseKernels();
+    if(kernel){
+        initialiseKernels();
+    }
     for(int isrc = 0; isrc < nsrc; isrc++){
         runForward(isrc);
         for(int irec = 0; irec < nrec; irec++){
@@ -1234,29 +1258,127 @@ static float computeKernels(int kernel){
 
     return misfit / dat::misfit_init;
 }
+static float findMaxAbs(double *a, int n){
+    double max = fabs(a[0]);
+    for(int i = 1; i < n; i++){
+        if(fabs(a[i]) > max){
+            max = fabs(a[i]);
+        }
+    }
+    return max;
+}
+static float updateModels(float step, float step_prev){
+    updateModel<<<nxb, nzt>>>(dat::lambda, dat::K_lambda, step, step_prev);
+    updateModel<<<nxb, nzt>>>(dat::mu, dat::K_mu, step, step_prev);
+    updateModel<<<nxb, nzt>>>(dat::rho, dat::K_rho, step, step_prev);
+    return step;
+}
 static float calculateStepLength(float teststep, float misfit, int iter){
     int nsteps = iter?3:5;
-    float *stepInArray = mat::createHost(nsteps);
-    float *misfitArray = mat::createHost(nsteps);
+    double *stepInArray = mat::createDoubleHost(nsteps);
+    double *misfitArray = mat::createDoubleHost(nsteps);
+    double *p = mat::createDoubleHost(3);
     for(int i = 0; i < nsteps; i++){
         stepInArray[i] = 2 * i * teststep / (nsteps - 1);
     }
     misfitArray[0] = misfit;
+    double minmisfit = misfit;
+    double maxmisfit = misfit;
 
+    int n_prev = nsteps;
+    double *stepInArray_prev = NULL;
+    double *misfitArray_prev = NULL;
+
+    double *stepInArray_new = NULL;
+    double *misfitArray_new = NULL;
+
+    double step_prev = stepInArray[0];
     for(int i = 1; i < nsteps; i++){
-        float steptry = stepInArray[i] - stepInArray[i-1];
-        updateModel<<<nxb, nzt>>>(dat::lambda, dat::K_lambda, steptry);
-        updateModel<<<nxb, nzt>>>(dat::mu, dat::K_mu, steptry);
-        updateModel<<<nxb, nzt>>>(dat::rho, dat::K_rho, steptry);
+        step_prev = updateModels(stepInArray[i], step_prev);
         misfitArray[i] = computeKernels(0);
+        if(misfitArray[i] < minmisfit){
+            minmisfit = misfitArray[i];
+        }
+        if(misfitArray[i] > maxmisfit){
+            maxmisfit = misfitArray[i];
+        }
     }
 
-    // float *ps = fitPolynomial(stepInArray, misfitArray, nsteps);
-    return 1;
+    double rss = polyfit(stepInArray, misfitArray, p, nsteps);
+    double step = -p[1] / (2 * p[0]);
+    double fitGoodness = rss / (maxmisfit - minmisfit);
+
+    double d[5];
+    for(int i=0;i<5;i++){
+        d[i]=misfitArray[0]+(misfitArray[4]-misfitArray[0])/4*i - misfitArray[i];
+    }
+    double minval=p[0]*step*step+p[1]*step+p[2];
+    printf("p = [%f, %f, %f]\n",p[0],p[1],p[2]);
+    printf("s = [%f, %f, %f, %f, %f]\n",stepInArray[0],stepInArray[1],stepInArray[2],nsteps==3?0:stepInArray[3],nsteps==3?0:stepInArray[4]);
+    printf("m = [%f, %f, %f, %f, %f]\n",misfitArray[0],misfitArray[1],misfitArray[2],nsteps==3?0:misfitArray[3],nsteps==3?0:misfitArray[4]);
+    printf("d = [%f, %f, %f, %f, %f]\n",d[0],d[1],d[2],nsteps==3?0:d[3],nsteps==3?0:d[4]);
+    printf("step=%e rss=%e fg=%e misfit=%f minval=%f\n",step,rss, fitGoodness,misfit, minval);
+
+    int nextra = 0;
+    int idxEmpty;
+    while((p[0] < 0 || step < 0 || fitGoodness > 0.1) && nextra < 5){
+        if(nextra == 0){
+            stepInArray_prev = mat::createDoubleHost(nsteps);
+            misfitArray_prev = mat::createDoubleHost(nsteps);
+            for(int i = 0; i < nsteps; i++){
+                stepInArray_prev[i] = stepInArray[i];
+                misfitArray_prev[i] = misfitArray[i];
+            }
+        }
+        stepInArray_new = mat::createDoubleHost(3);
+        misfitArray_new = mat::createDoubleHost(3);
+        stepInArray_new[0] = 0;
+        misfitArray_new[0] = misfitArray_prev[0];
+        if(p[0] < 0 && step < 0){
+            stepInArray_new[1] = stepInArray_prev[n_prev - 1];
+            stepInArray_new[2] = 2 * findMaxAbs(stepInArray_prev, n_prev);
+            misfitArray_new[1] = misfitArray_prev[n_prev - 1];
+            idxEmpty = 2;
+        }
+        else{
+            stepInArray_new[1] = stepInArray_prev[1] / 3;
+            stepInArray_new[2] = stepInArray_prev[1];
+            misfitArray_new[2] = misfitArray_prev[1];
+            idxEmpty = 1;
+        }
+        step_prev = updateModels(stepInArray_new[idxEmpty], step_prev);
+        misfitArray_new[idxEmpty] = computeKernels(0);
+
+        rss = polyfit(stepInArray_new, misfitArray_new, p, 3);
+        step = -p[1] / (2 * p[0]);
+        fitGoodness = rss / (maxmisfit - minmisfit);
+
+        double minval=p[0]*step*step+p[1]*step+p[2];
+        printf("\np = [%f, %f, %f]\n",p[0],p[1],p[2]);
+        printf("s = [%f, %f, %f]\n",stepInArray_new[0],stepInArray_new[1],stepInArray_new[2]);
+        printf("m = [%f, %f, %f]\n",misfitArray_new[0],misfitArray_new[1],misfitArray_new[2]);
+        printf("step=%e rss=%e fg=%e misfit=%f minval=%f\n",step,rss, fitGoodness,misfit, minval);
+
+        nextra++;
+        n_prev = 3;
+        free(stepInArray_prev);
+        free(misfitArray_prev);
+        stepInArray_prev = stepInArray_new;
+        misfitArray_prev = misfitArray_new;
+    }
+    printf("\n\n\n");
+
+    free(p);
+    free(stepInArray);
+    free(misfitArray);
+    free(stepInArray_new);
+    free(misfitArray_new);
+
+    return updateModels(step, step_prev);
 }
 static void inversionRoutine(){
-    int niter = 1;
-    float step = 0.002;
+    int niter = 20;
+    float step = 0.004;
 
     // model start
     dat::rho_start = mat::create(nx, nz);
@@ -1265,6 +1387,18 @@ static void inversionRoutine(){
     mat::copy(dat::rho_start, dat::rho, nx, nz);
     mat::copy(dat::mu_start, dat::mu, nx, nz);
     mat::copy(dat::lambda_start, dat::lambda, nx, nz);
+
+    { // later
+        float **lambda = mat::createHost(nx,nz);
+        float **mu = mat::createHost(nx,nz);
+        float **rho = mat::createHost(nx,nz);
+        mat::copyDeviceToHost(rho, dat::rho, nx, nz);
+        mat::copyDeviceToHost(mu, dat::mu, nx, nz);
+        mat::copyDeviceToHost(lambda, dat::lambda, nx, nz);
+        mat::write(rho, nx, nz, "rho0");
+        mat::write(mu, nx, nz, "mu0");
+        mat::write(lambda, nx, nz, "lambda0");
+    }
 
     // taper weights
     dat::tw = mat::create(nt);
@@ -1281,21 +1415,26 @@ static void inversionRoutine(){
     dat::misfit_init = -1;
 
     for(int iter = 0; iter < niter; iter++){
+        printf("iter = %d\n", iter + 1);
         float misfit = computeKernels(1);
-        printf("misfit_normed = %f\n", misfit); // later
-        // step = calculateStepLength(step, misfit, iter);
+        step = calculateStepLength(step, misfit, iter);
 
-        float **lambda = mat::createHost(nx,nz);
-        float **mu = mat::createHost(nx,nz);
-        float **rho = mat::createHost(nx,nz);
-        mat::copyDeviceToHost(rho, dat::K_rho, nx, nz);
-        mat::copyDeviceToHost(mu, dat::K_mu, nx, nz);
-        mat::copyDeviceToHost(lambda, dat::K_lambda, nx, nz);
-        mat::write(rho, nx, nz, "rho");
-        mat::write(mu, nx, nz, "mu");
-        mat::write(lambda, nx, nz, "lambda");
+        { // later
+            char lname[10], mname[10], rname[10];
+            sprintf(lname, "lambda%d", iter + 1);
+            sprintf(mname, "mu%d", iter + 1);
+            sprintf(rname, "rho%d", iter + 1);
+            float **lambda = mat::createHost(nx,nz);
+            float **mu = mat::createHost(nx,nz);
+            float **rho = mat::createHost(nx,nz);
+            mat::copyDeviceToHost(rho, dat::rho, nx, nz);
+            mat::copyDeviceToHost(mu, dat::mu, nx, nz);
+            mat::copyDeviceToHost(lambda, dat::lambda, nx, nz);
+            mat::write(rho, nx, nz, lname);
+            mat::write(mu, nx, nz, mname);
+            mat::write(lambda, nx, nz, rname);
+        }
     }
-
 }
 static void runSyntheticInvertion(){
     checkArgs(1);

@@ -1,8 +1,18 @@
 clc;
-cfg = 0;
+cfg = 10;
 
 [nx, nz, nt, nrec, nsfe, dt] = getn;
-if cfg >= 0
+if cfg ==10
+    K1 = import_data('lambda20','mu20','rho20',[nx,nz]);
+    K1.lambda=K1.lambda20;
+    K1.mu=K1.mu20;
+    K1.rho=K1.rho20;
+    K0 = import_data('lambda0','mu0','rho0',[nx,nz]);
+    K0.lambda=K0.lambda0;
+    K0.mu=K0.mu0;
+    K0.rho=K0.rho0;
+    plot_model_diff(K1,K0);
+elseif cfg >= 0
     compile_cuda;
     if cfg == 1
         [vx_rec, vz_rec, t] = run_cuda('vx_rec', 'vz_rec', 't');

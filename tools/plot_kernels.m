@@ -36,6 +36,15 @@ function fig_knl = plot_kernels(K, varargin)
     set_figure_properties_bothmachines;
 
     [K2, parametrisation, which_wavefields, sameorownpercentile, prctiel] = checkargs(K, varargin(:));
+    if isnumeric(K2.lambda)
+        K2.lambda = struct('total', K2.lambda);
+    end
+    if isnumeric(K2.mu)
+        K2.mu = struct('total', K2.mu);
+    end
+    if isnumeric(K2.rho)
+        K2.rho = struct('total', K2.rho);
+    end
 
     if strcmp(parametrisation, 'rhovsvp')
         params = {'rho2', 'vs2', 'vp2'};

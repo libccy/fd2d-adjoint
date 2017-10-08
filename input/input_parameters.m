@@ -166,9 +166,9 @@ model_type=10; %(start)
 % src_z = src_info.loc_z;
 
 % 4 src @ centre depth
-nsrc = 2;
-src_x= (1: 1: nsrc) * (Lx/(nsrc+1.7));
-src_z=ones(size(src_x)) * (Lz / 2);
+nsrc = 20;
+src_x= (1: 1: nsrc) * (Lx/(nsrc+1));
+src_z=ones(size(src_x)) * (Lz / 8);
 for ii = 1:nsrc
     src_info(ii).loc_x = src_x(ii);
     src_info(ii).loc_z = src_z(ii);
@@ -253,9 +253,13 @@ change_freq_every = 1;          % how many iterations with the same freq?
 % rec_z = Lz / 2;
 
 % 3 receivers
-nrec = 3;
-rec_x = (2: 1: nrec + 1) * (Lx/(nrec+3));
-rec_z = (2: 1: nrec + 1) * (Lz/(nrec+3));
+% nrec = 3;
+% rec_x = (2: 1: nrec + 1) * (Lx/(nrec+3));
+% rec_z = (2: 1: nrec + 1) * (Lz/(nrec+3));
+
+nrec = 20;
+rec_x= (1: 1: nsrc) * (Lx/(nsrc+1));
+rec_z=ones(size(src_x)) * (Lz * 7 / 8);
 
 % nsrc = 4;
 % rec_x= (1: 1: nsrc) * (Lx/(nsrc+1));

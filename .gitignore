@@ -3,3 +3,7 @@
 ./debugging/
 output/
 *.exe
+*.lib
+*.exp
+*.asv
+externaltools/config
