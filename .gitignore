@@ -6,4 +6,3 @@ output/
 *.lib
 *.exp
 *.asv
-externaltools/config
