@@ -150,6 +150,7 @@ namespace dat{
     float ***vy_forward;  // host
     float ***vz_forward;  // host
 
+    int optimization_method;
     int sigma;
     float **gsum;
     float **gtemp;
@@ -161,6 +162,10 @@ namespace dat{
     float K_lambda_ref;
     float K_rho_ref;
     float K_mu_ref;
+
+    float **lambda_in;
+    float **mu_in;
+    float **rho_in;
 }
 namespace mat{
     __global__ void _setValue(float *mat, const float init){
@@ -186,9 +191,20 @@ namespace mat{
     __global__ void _setPointerValue(float ***mat, float **data, const int i){
         mat[i] = data;
     }
+    __global__ void _setIndexValue(float *a, float *b, int index){
+        a[0] = b[index];
+    }
     __global__ void _copy(float **mat, float **init){
         devij;
         mat[i][j] = init[i][j];
+    }
+    __global__ void _copy(float **mat, float **init, float k){
+        devij;
+        mat[i][j] = init[i][j] * k;
+    }
+    __global__ void _calc(float **c, float ka, float **a, float kb, float **b){
+        devij;
+        c[i][j] = ka * a[i][j] + kb * b[i][j];
     }
 
     float *init(float *mat, const int m, const float init){
@@ -291,9 +307,18 @@ namespace mat{
     	return (double *)malloc(m * sizeof(double));
     }
 
+    float *getDataPointer(float **mat){
+        float **p=(float **)malloc(sizeof(float *));
+        cudaMemcpy(p, mat , sizeof(float *), cudaMemcpyDeviceToHost);
+        return *p;
+    }
     void copy(float **mat, float **init, const int m, const int n){
         dim3 dimBlock(m, nbt);
         mat::_copy<<<dimBlock, n / nbt>>>(mat, init);
+    }
+    void copy(float **mat, float **init, float k, const int m, const int n){
+        dim3 dimBlock(m, nbt);
+        mat::_copy<<<dimBlock, n / nbt>>>(mat, init, k);
     }
     void copyHostToDevice(float *d_a, const float *a, const int m){
         cudaMemcpy(d_a, a , m * sizeof(float), cudaMemcpyHostToDevice);
@@ -336,10 +361,37 @@ namespace mat{
         }
     }
 
+    void calc(float **c, float ka, float **a, float kb, float **b, int m, int n){
+        dim3 dimBlock(m, nbt);
+        mat::_calc<<<dimBlock, n / nbt>>>(c, ka, a, kb, b);
+    }
     float norm(float *a, int n){
         float norm_a = 0;
         cublasSnrm2_v2(cublas_handle, n, a, 1, &norm_a);
         return norm_a;
+    }
+    float norm(float **a, int m, int n){
+        return mat::norm(mat::getDataPointer(a), m * n);
+    }
+    float amax(float *a, int n){
+        int index = 0;
+        cublasIsamax_v2(cublas_handle, n, a, 1, &index);
+        float *b = mat::create(1);
+        mat::_setIndexValue<<<1, 1>>>(b, a, index - 1);
+        float *c = mat::createHost(1);
+        mat::copyDeviceToHost(c, b, 1);
+        return c[0];
+    }
+    float amax(float **a, int m, int n){
+        return mat::amax(mat::getDataPointer(a), m * n);
+    }
+    float dot(float *a, float *b, int n){
+        float dot_ab = 0;
+        cublasSdot_v2(cublas_handle, n, a, 1, b, 1, &dot_ab);
+        return dot_ab;
+    }
+    float dot(float **a, float **b, int m, int n){
+        return mat::dot(mat::getDataPointer(a), mat::getDataPointer(b), m * n);
     }
 
     void read(float *data, int n, char *fname){
@@ -952,7 +1004,7 @@ static void defineMaterialParameters(){
             mat::initHost(rho2, nx, nz, 2600);
             for(int i = left; i < right; i++){
                 for(int j = bottom; j < top; j++){
-                    rho2[i][j] = 3600;
+                    rho2[i][j] = 2800;
                 }
             }
             mat::copyHostToDevice(dat::rho, rho2, nx, nz);
@@ -1397,7 +1449,7 @@ static void inversionRoutine(){
     cublasCreate(&cublas_handle);
     cusolverDnCreate(&solver_handle);
 
-    int niter = 5;
+    int niter = 20;
     float step = 0.004;
 
     float **lambda = mat::createHost(nx,nz);
@@ -1429,31 +1481,88 @@ static void inversionRoutine(){
     dat::K_mu_ref = -1;
     dat::K_rho_ref = -1;
 
-    for(int iter = 0; iter < niter; iter++){
-        printf("iter = %d\n", iter + 1);
-        float misfit = computeKernels(1);
-        step = calculateStepLength(step, misfit, iter);
+    int &opm = dat::optimization_method;
+    if(opm == 1 || opm == 2){
+        float **g = mat::create(nx, nz);
+        float **h = mat::create(nx, nz);
+        float **gpr = mat::create(nx, nz);
+		float **sch = mat::create(nx, nz);
 
-        { // later
-            char lname[10], mname[10], rname[10];
-            sprintf(lname, "lambda%d", iter + 1);
-            sprintf(mname, "mu%d", iter + 1);
-            sprintf(rname, "rho%d", iter + 1);
-            mat::copyDeviceToHost(rho, dat::rho, nx, nz);
-            mat::copyDeviceToHost(mu, dat::mu, nx, nz);
-            mat::copyDeviceToHost(lambda, dat::lambda, nx, nz);
-            mat::write(rho, nx, nz, rname);
-            mat::write(mu, nx, nz, mname);
-            mat::write(lambda, nx, nz, lname);
+        float misfit = computeKernels(1);
+        mat::copy(g, dat::rho, nx, nz);
+        float ng = mat::amax(g, nx, nz);
+        float n2g = mat::norm(g, nx, nz);
+        float gg = n2g * n2g;
+        float gam = 0;
+        mat::init(h, nx, nz, 0);
+        float nh = 0;
+
+        // reduce cudaMalloc: later
+
+        for(int iter = 0; iter < niter; iter++){
+            printf("iter = %d\n", iter + 1);
+			float ggpr = gg;
+			mat::copy(gpr, g, nx, nz);
+
+            mat::calc(h, gam, h, 1, g, nx, nz);
+			if (mat::dot(g, h, nx, nz) <= 1e-3 * n2g * nh) {
+				mat::copy(h, g, nx, nz);
+				nh = n2g;
+			}
+            else{
+                nh = mat::norm(h, nx, nz);
+            }
+
+			mat::copy(dat::rho, h, nx, nz);
+            step = calculateStepLength(step, misfit, iter);
+
+            misfit = computeKernels(1);
+            mat::copy(g, dat::rho, nx, nz);
+            ng = mat::amax(g, nx, nz);
+            n2g = mat::norm(g, nx, nz);
+            gg = n2g * n2g;
+
+            if(opm == 1){
+                gam = gg / ggpr;
+            }
+            else{
+                mat::calc(gpr, 1, g, -1, gpr, nx, nz);
+    			gam = mat::dot(gpr, g, nx, nz) / ggpr;
+            }
+
+            { // later
+                char lname[10], mname[10], rname[10];
+                char lname2[10], mname2[10], rname2[10];
+                sprintf(lname, "lambda%d", iter + 1);
+                sprintf(lname2, "klambda%d", iter + 1);
+                sprintf(mname, "mu%d", iter + 1);
+                sprintf(mname2, "kmu%d", iter + 1);
+                sprintf(rname, "rho%d", iter + 1);
+                sprintf(rname2, "krho%d", iter + 1);
+                mat::copyDeviceToHost(rho, dat::rho, nx, nz);
+                mat::copyDeviceToHost(mu, dat::mu, nx, nz);
+                mat::copyDeviceToHost(lambda, dat::lambda, nx, nz);
+                mat::write(rho, nx, nz, rname);
+                mat::write(mu, nx, nz, mname);
+                mat::write(lambda, nx, nz, lname);
+
+
+                mat::copyDeviceToHost(rho, dat::K_rho, nx, nz);
+                mat::copyDeviceToHost(mu, dat::K_mu, nx, nz);
+                mat::copyDeviceToHost(lambda, dat::K_lambda, nx, nz);
+                mat::write(rho, nx, nz, rname2);
+                mat::write(mu, nx, nz, mname2);
+                mat::write(lambda, nx, nz, lname2);
+            }
         }
     }
-
-    // mat::copyDeviceToHost(rho, dat::K_rho, nx, nz);
-    // mat::copyDeviceToHost(mu, dat::K_mu, nx, nz);
-    // mat::copyDeviceToHost(lambda, dat::K_lambda, nx, nz);
-    // mat::write(rho, nx, nz, "rho");
-    // mat::write(mu, nx, nz, "mu");
-    // mat::write(lambda, nx, nz, "lambda");
+    else{
+        for(int iter = 0; iter < niter; iter++){
+            printf("iter = %d\n", iter + 1);
+            float misfit = computeKernels(1);
+            step = calculateStepLength(step, misfit, iter);
+        }
+    }
 
     cublasDestroy(cublas_handle);
     cusolverDnDestroy(solver_handle);
@@ -1474,6 +1583,7 @@ static void runSyntheticInvertion(){
     dat::rho_ref = 2600;
     dat::mu_ref = 2.66e10;
     dat::lambda_ref = 3.42e10;
+    dat::optimization_method = 2;
     defineMaterialParameters();
     inversionRoutine();
 }
