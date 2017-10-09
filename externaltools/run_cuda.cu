@@ -1,3 +1,21 @@
+// ************************************************************************
+// * Cuda based 2D elastic wave forward modeling and adjoint inversion    *
+// * **********************************************************************
+// * Author: Congyue Cui                                                  *
+// *       https://github.com/congyue/cufdm_inv                           *
+// *                                                                      *
+// * FDM calculation modified from                                        *
+// *       https://github.com/Phlos/fd2d-adjoint                          *
+// * by                                                                   *
+// *       Nienke Blom                                                    *
+// *       Christian Boehm                                                *
+// *       Andreas Fichtner                                               *
+// *                                                                      *
+// * JSON input file parsed by ArduinoJson                                *
+// *       https://github.com/bblanchon/ArduinoJson                       *
+// *                                                                      *
+// ************************************************************************
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -134,9 +152,9 @@ namespace dat{
     float **gtemp;
 
     float misfit_init;
-    float **lambda_start;
-    float **mu_start;
-    float **rho_start;
+    float lambda_ref;
+    float mu_ref;
+    float rho_ref;
 }
 namespace mat{
     __global__ void _setValue(float *mat, const float init){
@@ -549,9 +567,9 @@ __global__ void prepareAdjointSTF(float **adstf, float **u_syn, float ***u_obs, 
     int irec = threadIdx.x;
     adstf[irec][nt - it - 1] = (u_syn[irec][it] - u_obs[isrc][irec][it]) * tw[it] * 2;
 }
-__global__ void normKernel(float **model, float **model_start, float misfit_init){
+__global__ void normKernel(float **model, float model_ref, float misfit_init){
     devij;
-    model[i][j] *= model_start[i][j] / misfit_init;
+    model[i][j] *= model_ref / misfit_init;
 }
 __device__ float gaussian(int x, int sigma){
     float xf = (float)x;
@@ -1245,15 +1263,15 @@ static float computeKernels(int kernel){
         if(dat::misfit_init < 0){
             dat::misfit_init = misfit;
         }
-        normKernel<<<nxb, nzt>>>(dat::K_rho, dat::rho_start, dat::misfit_init);
-        normKernel<<<nxb, nzt>>>(dat::K_mu, dat::mu_start, dat::misfit_init);
-        normKernel<<<nxb, nzt>>>(dat::K_lambda, dat::lambda_start, dat::misfit_init);
-        filterKernelX<<<nxb, nzt>>>(dat::K_rho, dat::gtemp, nx, dat::sigma);
-        filterKernelZ<<<nxb, nzt>>>(dat::K_rho, dat::gtemp, dat::gsum, nz, dat::sigma);
-        filterKernelX<<<nxb, nzt>>>(dat::K_mu, dat::gtemp, nx, dat::sigma);
-        filterKernelZ<<<nxb, nzt>>>(dat::K_mu, dat::gtemp, dat::gsum, nz, dat::sigma);
-        filterKernelX<<<nxb, nzt>>>(dat::K_lambda, dat::gtemp, nx, dat::sigma);
-        filterKernelZ<<<nxb, nzt>>>(dat::K_lambda, dat::gtemp, dat::gsum, nz, dat::sigma);
+        // normKernel<<<nxb, nzt>>>(dat::K_rho, dat::rho_ref, dat::misfit_init);
+        // normKernel<<<nxb, nzt>>>(dat::K_mu, dat::mu_ref, dat::misfit_init);
+        // normKernel<<<nxb, nzt>>>(dat::K_lambda, dat::lambda_ref, dat::misfit_init);
+        // filterKernelX<<<nxb, nzt>>>(dat::K_rho, dat::gtemp, nx, dat::sigma);
+        // filterKernelZ<<<nxb, nzt>>>(dat::K_rho, dat::gtemp, dat::gsum, nz, dat::sigma);
+        // filterKernelX<<<nxb, nzt>>>(dat::K_mu, dat::gtemp, nx, dat::sigma);
+        // filterKernelZ<<<nxb, nzt>>>(dat::K_mu, dat::gtemp, dat::gsum, nz, dat::sigma);
+        // filterKernelX<<<nxb, nzt>>>(dat::K_lambda, dat::gtemp, nx, dat::sigma);
+        // filterKernelZ<<<nxb, nzt>>>(dat::K_lambda, dat::gtemp, dat::gsum, nz, dat::sigma);
     }
 
     return misfit / dat::misfit_init;
@@ -1268,8 +1286,8 @@ static float findMaxAbs(double *a, int n){
     return max;
 }
 static float updateModels(float step, float step_prev){
-    updateModel<<<nxb, nzt>>>(dat::lambda, dat::K_lambda, step, step_prev);
-    updateModel<<<nxb, nzt>>>(dat::mu, dat::K_mu, step, step_prev);
+    // updateModel<<<nxb, nzt>>>(dat::lambda, dat::K_lambda, step, step_prev);
+    // updateModel<<<nxb, nzt>>>(dat::mu, dat::K_mu, step, step_prev);
     updateModel<<<nxb, nzt>>>(dat::rho, dat::K_rho, step, step_prev);
     return step;
 }
@@ -1377,21 +1395,14 @@ static float calculateStepLength(float teststep, float misfit, int iter){
     return updateModels(step, step_prev);
 }
 static void inversionRoutine(){
-    int niter = 20;
+    int niter = 1;
     float step = 0.004;
 
-    // model start
-    dat::rho_start = mat::create(nx, nz);
-    dat::mu_start = mat::create(nx, nz);
-    dat::lambda_start = mat::create(nx, nz);
-    mat::copy(dat::rho_start, dat::rho, nx, nz);
-    mat::copy(dat::mu_start, dat::mu, nx, nz);
-    mat::copy(dat::lambda_start, dat::lambda, nx, nz);
 
+    float **lambda = mat::createHost(nx,nz);
+    float **mu = mat::createHost(nx,nz);
+    float **rho = mat::createHost(nx,nz);
     { // later
-        float **lambda = mat::createHost(nx,nz);
-        float **mu = mat::createHost(nx,nz);
-        float **rho = mat::createHost(nx,nz);
         mat::copyDeviceToHost(rho, dat::rho, nx, nz);
         mat::copyDeviceToHost(mu, dat::mu, nx, nz);
         mat::copyDeviceToHost(lambda, dat::lambda, nx, nz);
@@ -1413,28 +1424,38 @@ static void inversionRoutine(){
     // adjoint related parameters
     dat::obs_type = 1;
     dat::misfit_init = -1;
+    dat::K_lambda_ref = -1;
+    dat::K_mu_ref = -1;
+    dat::K_rho_ref = -1;
 
     for(int iter = 0; iter < niter; iter++){
         printf("iter = %d\n", iter + 1);
         float misfit = computeKernels(1);
-        step = calculateStepLength(step, misfit, iter);
+        printf("misfit = %f\n",misfit);
+        // step = calculateStepLength(step, misfit, iter);
+        updateModels(2e15,0);
+        printf("misfit = %f\n",computeKernels(0));
 
-        { // later
-            char lname[10], mname[10], rname[10];
-            sprintf(lname, "lambda%d", iter + 1);
-            sprintf(mname, "mu%d", iter + 1);
-            sprintf(rname, "rho%d", iter + 1);
-            float **lambda = mat::createHost(nx,nz);
-            float **mu = mat::createHost(nx,nz);
-            float **rho = mat::createHost(nx,nz);
-            mat::copyDeviceToHost(rho, dat::rho, nx, nz);
-            mat::copyDeviceToHost(mu, dat::mu, nx, nz);
-            mat::copyDeviceToHost(lambda, dat::lambda, nx, nz);
-            mat::write(rho, nx, nz, lname);
-            mat::write(mu, nx, nz, mname);
-            mat::write(lambda, nx, nz, rname);
-        }
+        // { // later
+        //     char lname[10], mname[10], rname[10];
+        //     sprintf(lname, "lambda%d", iter + 1);
+        //     sprintf(mname, "mu%d", iter + 1);
+        //     sprintf(rname, "rho%d", iter + 1);
+        //     mat::copyDeviceToHost(rho, dat::rho, nx, nz);
+        //     mat::copyDeviceToHost(mu, dat::mu, nx, nz);
+        //     mat::copyDeviceToHost(lambda, dat::lambda, nx, nz);
+        //     mat::write(rho, nx, nz, rname);
+        //     mat::write(mu, nx, nz, mname);
+        //     mat::write(lambda, nx, nz, lname);
+        // }
     }
+
+    // mat::copyDeviceToHost(rho, dat::K_rho, nx, nz);
+    // mat::copyDeviceToHost(mu, dat::K_mu, nx, nz);
+    // mat::copyDeviceToHost(lambda, dat::K_lambda, nx, nz);
+    // mat::write(rho, nx, nz, "rho");
+    // mat::write(mu, nx, nz, "mu");
+    // mat::write(lambda, nx, nz, "lambda");
 }
 static void runSyntheticInvertion(){
     checkArgs(1);
@@ -1449,6 +1470,9 @@ static void runSyntheticInvertion(){
     }
 
     dat::model_type = 10;
+    dat::rho_ref = 2600;
+    dat::mu_ref = 2.66e10;
+    dat::lambda_ref = 3.42e10;
     defineMaterialParameters();
     inversionRoutine();
 }
