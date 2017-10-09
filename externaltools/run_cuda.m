@@ -22,7 +22,7 @@ function varargout = run_cuda(varargin)
         end
     end
     
-    if exist('externaltools\config','file')
-        delete('externaltools\config');
-    end
+%     if exist('externaltools\config','file')
+%         delete('externaltools\config');
+%     end
 end

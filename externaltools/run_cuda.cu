@@ -30,6 +30,9 @@ const float pi = 3.1415927;
 const int nbt = 1;
 __constant__ float d_pi = 3.1415927;
 
+cublasHandle_t cublas_handle;
+cusolverDnHandle_t solver_handle;
+
 namespace dat{
     int nx;
     int nz;
@@ -151,10 +154,13 @@ namespace dat{
     float **gsum;
     float **gtemp;
 
-    float misfit_init;
+    float misfit_ref;
     float lambda_ref;
     float mu_ref;
     float rho_ref;
+    float K_lambda_ref;
+    float K_rho_ref;
+    float K_mu_ref;
 }
 namespace mat{
     __global__ void _setValue(float *mat, const float init){
@@ -328,6 +334,12 @@ namespace mat{
         for(int i = 0; i < p; i++){
             mat::copyDeviceToHost(pa[i], phd_a[i], m, n);
         }
+    }
+
+    float norm(float *a, int n){
+        float norm_a = 0;
+        cublasSnrm2_v2(cublas_handle, n, a, 1, &norm_a);
+        return norm_a;
     }
 
     void read(float *data, int n, char *fname){
@@ -567,9 +579,9 @@ __global__ void prepareAdjointSTF(float **adstf, float **u_syn, float ***u_obs, 
     int irec = threadIdx.x;
     adstf[irec][nt - it - 1] = (u_syn[irec][it] - u_obs[isrc][irec][it]) * tw[it] * 2;
 }
-__global__ void normKernel(float **model, float model_ref, float misfit_init){
+__global__ void normKernel(float **model, float model_ref, float misfit_ref){
     devij;
-    model[i][j] *= model_ref / misfit_init;
+    model[i][j] *= model_ref / misfit_ref;
 }
 __device__ float gaussian(int x, int sigma){
     float xf = (float)x;
@@ -647,12 +659,6 @@ static void solveQR(double *h_A, double *h_B, double *XC, const int Nrows, const
     int work_size = 0;
     int *devInfo = mat::createInt(1);
 
-    cusolverDnHandle_t solver_handle;
-    cusolverDnCreate(&solver_handle);
-
-    cublasHandle_t cublas_handle;
-    cublasCreate(&cublas_handle);
-
     double *d_A = mat::createDouble(Nrows * Ncols);
     cudaMemcpy(d_A, h_A, Nrows * Ncols * sizeof(double), cudaMemcpyHostToDevice);
 
@@ -688,8 +694,6 @@ static void solveQR(double *h_A, double *h_B, double *XC, const int Nrows, const
     cudaFree(d_TAU);
     cudaFree(devInfo);
     cudaFree(work);
-    cublasDestroy(cublas_handle);
-    cusolverDnDestroy(solver_handle);
 }
 static double polyfit(double *x, double *y, double *p, int n){
     double *A = mat::createDoubleHost(3 * n);
@@ -1260,21 +1264,21 @@ static float computeKernels(int kernel){
     cudaFree(d_misfit);
 
     if(kernel){
-        if(dat::misfit_init < 0){
-            dat::misfit_init = misfit;
+        if(dat::misfit_ref < 0){
+            dat::misfit_ref = misfit;
         }
-        // normKernel<<<nxb, nzt>>>(dat::K_rho, dat::rho_ref, dat::misfit_init);
-        // normKernel<<<nxb, nzt>>>(dat::K_mu, dat::mu_ref, dat::misfit_init);
-        // normKernel<<<nxb, nzt>>>(dat::K_lambda, dat::lambda_ref, dat::misfit_init);
-        // filterKernelX<<<nxb, nzt>>>(dat::K_rho, dat::gtemp, nx, dat::sigma);
-        // filterKernelZ<<<nxb, nzt>>>(dat::K_rho, dat::gtemp, dat::gsum, nz, dat::sigma);
-        // filterKernelX<<<nxb, nzt>>>(dat::K_mu, dat::gtemp, nx, dat::sigma);
-        // filterKernelZ<<<nxb, nzt>>>(dat::K_mu, dat::gtemp, dat::gsum, nz, dat::sigma);
-        // filterKernelX<<<nxb, nzt>>>(dat::K_lambda, dat::gtemp, nx, dat::sigma);
-        // filterKernelZ<<<nxb, nzt>>>(dat::K_lambda, dat::gtemp, dat::gsum, nz, dat::sigma);
+        normKernel<<<nxb, nzt>>>(dat::K_rho, dat::rho_ref, dat::misfit_ref);
+        normKernel<<<nxb, nzt>>>(dat::K_mu, dat::mu_ref, dat::misfit_ref);
+        normKernel<<<nxb, nzt>>>(dat::K_lambda, dat::lambda_ref, dat::misfit_ref);
+        filterKernelX<<<nxb, nzt>>>(dat::K_rho, dat::gtemp, nx, dat::sigma);
+        filterKernelZ<<<nxb, nzt>>>(dat::K_rho, dat::gtemp, dat::gsum, nz, dat::sigma);
+        filterKernelX<<<nxb, nzt>>>(dat::K_mu, dat::gtemp, nx, dat::sigma);
+        filterKernelZ<<<nxb, nzt>>>(dat::K_mu, dat::gtemp, dat::gsum, nz, dat::sigma);
+        filterKernelX<<<nxb, nzt>>>(dat::K_lambda, dat::gtemp, nx, dat::sigma);
+        filterKernelZ<<<nxb, nzt>>>(dat::K_lambda, dat::gtemp, dat::gsum, nz, dat::sigma);
     }
 
-    return misfit / dat::misfit_init;
+    return misfit / dat::misfit_ref;
 }
 static float findMaxAbs(double *a, int n){
     double max = fabs(a[0]);
@@ -1326,15 +1330,10 @@ static float calculateStepLength(float teststep, float misfit, int iter){
     double step = -p[1] / (2 * p[0]);
     double fitGoodness = rss / (maxmisfit - minmisfit);
 
-    double d[5];
-    for(int i=0;i<5;i++){
-        d[i]=misfitArray[0]+(misfitArray[4]-misfitArray[0])/4*i - misfitArray[i];
-    }
     double minval=p[0]*step*step+p[1]*step+p[2];
     printf("p = [%f, %f, %f]\n",p[0],p[1],p[2]);
     printf("s = [%f, %f, %f, %f, %f]\n",stepInArray[0],stepInArray[1],stepInArray[2],nsteps==3?0:stepInArray[3],nsteps==3?0:stepInArray[4]);
     printf("m = [%f, %f, %f, %f, %f]\n",misfitArray[0],misfitArray[1],misfitArray[2],nsteps==3?0:misfitArray[3],nsteps==3?0:misfitArray[4]);
-    printf("d = [%f, %f, %f, %f, %f]\n",d[0],d[1],d[2],nsteps==3?0:d[3],nsteps==3?0:d[4]);
     printf("step=%e rss=%e fg=%e misfit=%f minval=%f\n",step,rss, fitGoodness,misfit, minval);
 
     int nextra = 0;
@@ -1395,9 +1394,11 @@ static float calculateStepLength(float teststep, float misfit, int iter){
     return updateModels(step, step_prev);
 }
 static void inversionRoutine(){
-    int niter = 1;
-    float step = 0.004;
+    cublasCreate(&cublas_handle);
+    cusolverDnCreate(&solver_handle);
 
+    int niter = 5;
+    float step = 0.004;
 
     float **lambda = mat::createHost(nx,nz);
     float **mu = mat::createHost(nx,nz);
@@ -1423,7 +1424,7 @@ static void inversionRoutine(){
 
     // adjoint related parameters
     dat::obs_type = 1;
-    dat::misfit_init = -1;
+    dat::misfit_ref = -1;
     dat::K_lambda_ref = -1;
     dat::K_mu_ref = -1;
     dat::K_rho_ref = -1;
@@ -1431,23 +1432,20 @@ static void inversionRoutine(){
     for(int iter = 0; iter < niter; iter++){
         printf("iter = %d\n", iter + 1);
         float misfit = computeKernels(1);
-        printf("misfit = %f\n",misfit);
-        // step = calculateStepLength(step, misfit, iter);
-        updateModels(2e15,0);
-        printf("misfit = %f\n",computeKernels(0));
+        step = calculateStepLength(step, misfit, iter);
 
-        // { // later
-        //     char lname[10], mname[10], rname[10];
-        //     sprintf(lname, "lambda%d", iter + 1);
-        //     sprintf(mname, "mu%d", iter + 1);
-        //     sprintf(rname, "rho%d", iter + 1);
-        //     mat::copyDeviceToHost(rho, dat::rho, nx, nz);
-        //     mat::copyDeviceToHost(mu, dat::mu, nx, nz);
-        //     mat::copyDeviceToHost(lambda, dat::lambda, nx, nz);
-        //     mat::write(rho, nx, nz, rname);
-        //     mat::write(mu, nx, nz, mname);
-        //     mat::write(lambda, nx, nz, lname);
-        // }
+        { // later
+            char lname[10], mname[10], rname[10];
+            sprintf(lname, "lambda%d", iter + 1);
+            sprintf(mname, "mu%d", iter + 1);
+            sprintf(rname, "rho%d", iter + 1);
+            mat::copyDeviceToHost(rho, dat::rho, nx, nz);
+            mat::copyDeviceToHost(mu, dat::mu, nx, nz);
+            mat::copyDeviceToHost(lambda, dat::lambda, nx, nz);
+            mat::write(rho, nx, nz, rname);
+            mat::write(mu, nx, nz, mname);
+            mat::write(lambda, nx, nz, lname);
+        }
     }
 
     // mat::copyDeviceToHost(rho, dat::K_rho, nx, nz);
@@ -1456,6 +1454,9 @@ static void inversionRoutine(){
     // mat::write(rho, nx, nz, "rho");
     // mat::write(mu, nx, nz, "mu");
     // mat::write(lambda, nx, nz, "lambda");
+
+    cublasDestroy(cublas_handle);
+    cusolverDnDestroy(solver_handle);
 }
 static void runSyntheticInvertion(){
     checkArgs(1);

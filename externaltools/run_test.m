@@ -1,12 +1,16 @@
 clc;
-cfg = 10;
+cfg = 29;
 
 [nx, nz, nt, nrec, nsfe, dt] = getn;
-if cfg ==10
-    K1 = import_data('lambda20','mu20','rho20',[nx,nz]);
-    K1.lambda=K1.lambda20;
-    K1.mu=K1.mu20;
-    K1.rho=K1.rho20;
+if cfg > 10 && cfg < 30
+    n = cfg - 10;
+    lambdax = sprintf('lambda%d',n);
+    mux = sprintf('mu%d',n);
+    rhox = sprintf('rho%d',n);
+    K1 = import_data(lambdax,mux,rhox,[nx,nz]);
+    K1.lambda=K1.(lambdax);
+    K1.mu=K1.(mux);
+    K1.rho=K1.(rhox);
     K0 = import_data('lambda0','mu0','rho0',[nx,nz]);
     K0.lambda=K0.lambda0;
     K0.mu=K0.mu0;

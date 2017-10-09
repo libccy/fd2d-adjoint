@@ -166,7 +166,7 @@ model_type=10; %(start)
 % src_z = src_info.loc_z;
 
 % 4 src @ centre depth
-nsrc = 20;
+nsrc = 10;
 src_x= (1: 1: nsrc) * (Lx/(nsrc+1));
 src_z=ones(size(src_x)) * (Lz / 8);
 for ii = 1:nsrc
@@ -257,7 +257,7 @@ change_freq_every = 1;          % how many iterations with the same freq?
 % rec_x = (2: 1: nrec + 1) * (Lx/(nrec+3));
 % rec_z = (2: 1: nrec + 1) * (Lz/(nrec+3));
 
-nrec = 20;
+nrec = 10;
 rec_x= (1: 1: nsrc) * (Lx/(nsrc+1));
 rec_z=ones(size(src_x)) * (Lz * 7 / 8);
 
@@ -298,7 +298,7 @@ simulation_mode='forward';
 % absorbing boundaries
 %==========================================================================
 
-width = 500.0e3;        % width of the boundary layer in m
+width = 100.0e3;        % width of the boundary layer in m
 
 absorb_left=1;  % absorb waves on the left boundary
 absorb_right=1; % absorb waves on the right boundary
